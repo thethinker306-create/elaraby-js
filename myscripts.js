@@ -1468,14 +1468,15 @@ window.saveCustomerData = async function() {
 // 🔥 استدعاء منبه الأندرويد 
         if (reminderTimestamp) {
             try {
-               if (window.AndroidBridge) {
-    window.AndroidBridge.setAlarmDirect(
-        String(docRef.id), 
-        String(reminderTimestamp), 
-        String(name), 
-        String(product), 
-        String(phone)
-    );
+                if (window.AndroidBridge && typeof window.AndroidBridge.setAlarmDirect === "function") {
+                    // إرسال المتغيرات كنصوص (String) لضمان عدم رفضها من الأندرويد
+                    window.AndroidBridge.setAlarmDirect(
+                        String(docRef.id), 
+                        String(reminderTimestamp), 
+                        String(name), 
+                        String(product), 
+                        String(phone || "")
+                    );
                 } else {
                     console.log("⚠️ الأندرويد غير متصل");
                 }
