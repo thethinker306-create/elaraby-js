@@ -1259,109 +1259,95 @@ window.sendWhatsApp = async function(productId) {
         return;
     }
     
-    // 1. تنظيف تفاصيل HTML وضغط المسافات بشكل ممتاز (سطر واحد فقط)
     function cleanHTML(html) {
         if (!html) return "لا توجد تفاصيل إضافية.";
         let text = html.replace(/<br\s*[\/]?>/gi, "\n")
                        .replace(/<\/p>/gi, "\n")
                        .replace(/<li>/gi, "- ")
                        .replace(/<\/li>/gi, "\n")
-                       .replace(/<[^>]+>/g, ""); // تنظيف الأكواد المتبقية
-        
-        // مسح الأسطر الفارغة وجعل المسافات متقاربة جداً
+                       .replace(/<[^>]+>/g, ""); 
         return text.trim().replace(/[\r\n]+/g, '\n');
     }
 
     let plainDetails = cleanHTML(p.details);
-
-    // 2. تنسيق السعر
     const priceText = p.price ? `${Number(p.price).toLocaleString('en-US')} ج.م` : 'السعر عند التواصل';
-
-    // 3. تجهيز النص الأساسي (مضغوط ومنسق)
     const textMessage = `أهلاً بك عميلنا العزيز 🌟\nبناءً على طلبك، إليك تفاصيل المنتج:\n\n📦 *المنتج:* ${p.name || 'غير محدد'}\n🔖 *كود الموديل:* ${p.id || 'غير متوفر'}\n💰 *السعر:* ${priceText}\n\n📋 *أهم المواصفات:*\n${plainDetails}\n\nيسعدنا تواصلك معنا لتأكيد الطلب أو للإجابة على أي استفسار! 📞`;
 
-    // 4. استخراج رابط الصورة وضمان أنه آمن (https)
     let imageUrl = (p.images && p.images.length > 0 && p.images[0].trim() !== "") ? p.images[0].trim() : null;
     if (imageUrl) imageUrl = imageUrl.replace('http://', 'https://');
 
-    // 5. دالة الطوارئ (الآن ترسل النص فقط بدون الرابط لمنع المربع الأبيض المزعج)
-    const sendTextOnly = () => {
+    // 🚨 الحل لمشكلة واتساب ويب: استخدام whatsapp:// بدلاً من https://api...
+    const sendTextOnlyNative = () => {
         const encodedMsg = encodeURIComponent(textMessage);
-        window.open(`https://api.whatsapp.com/send?text=${encodedMsg}`, '_blank');
+        window.location.href = `whatsapp://send?text=${encodedMsg}`;
         releaseLock();
     };
 
+    // 🌟 الحل السحري لإرسال الصورة داخل تطبيق الأندرويد
+    if (window.AndroidBridge && typeof window.AndroidBridge.shareToWhatsApp === "function") {
+        Swal.fire({ title: 'جاري التجهيز...', text: 'لحظات...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+        
+        if (imageUrl) {
+            try {
+                const canvasBase64 = await new Promise((resolve, reject) => {
+                    const img = new Image();
+                    img.crossOrigin = "Anonymous";
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        // تحويل الصورة إلى Base64
+                        resolve(canvas.toDataURL('image/jpeg', 0.9));
+                    };
+                    img.onerror = reject;
+                    img.src = imageUrl;
+                });
+                Swal.close();
+                // إرسال الصورة والنص للأندرويد
+                window.AndroidBridge.shareToWhatsApp(canvasBase64, textMessage);
+                releaseLock();
+            } catch (e) {
+                Swal.close();
+                // إذا فشل جلب الصورة، ارسل النص فقط عبر الأندرويد
+                window.AndroidBridge.shareToWhatsApp("", textMessage);
+                releaseLock();
+            }
+        } else {
+            Swal.close();
+            window.AndroidBridge.shareToWhatsApp("", textMessage);
+            releaseLock();
+        }
+        return; // توقف هنا لأن التطبيق تكفل بالأمر
+    }
+
+    // ==========================================
+    // الكود التالي سيعمل فقط إذا كان المستخدم يفتح الموقع من متصفح عادي
+    // ==========================================
     if (!navigator.share || !navigator.canShare || !imageUrl) {
-        sendTextOnly();
+        sendTextOnlyNative();
         return;
     }
 
-    Swal.fire({
-        title: 'جاري التجهيز...',
-        text: 'لحظات...',
-        allowOutsideClick: false,
-        didOpen: () => { Swal.showLoading(); }
-    });
+    Swal.fire({ title: 'جاري التجهيز...', text: 'لحظات...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
 
     try {
-        // المحاولة الأولى: جلب الصورة بسرعة فائقة
         const response = await fetch(imageUrl, { mode: 'cors' });
         if (!response.ok) throw new Error("Fetch failed");
         
         const blob = await response.blob();
         const fileToShare = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
-
-        const shareData = {
-            text: textMessage,
-            files: [fileToShare]
-        };
+        const shareData = { text: textMessage, files: [fileToShare] };
 
         if (!navigator.canShare(shareData)) throw new Error("Cannot share files");
 
         Swal.close();
         await navigator.share(shareData);
         releaseLock();
-
     } catch (error) {
-        if (error.name === 'AbortError') {
-            Swal.close();
-            releaseLock();
-            return; // منع أي تكرار إذا أغلقت نافذة المشاركة
-        }
-
-        // المحاولة الثانية (الحل السحري): إذا منعتنا السيرفرات، نرسم الصورة برمجياً لكسر الحماية
-        try {
-            const canvasBlob = await new Promise((resolve, reject) => {
-                const img = new Image();
-                img.crossOrigin = "Anonymous";
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = img.width;
-                    canvas.height = img.height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0);
-                    canvas.toBlob(b => b ? resolve(b) : reject(), 'image/jpeg', 0.9);
-                };
-                img.onerror = reject;
-                img.src = imageUrl;
-            });
-
-            const fileToShare = new File([canvasBlob], 'photo.jpg', { type: 'image/jpeg' });
-            const shareData = { text: textMessage, files: [fileToShare] };
-
-            if (navigator.canShare(shareData)) {
-                Swal.close();
-                await navigator.share(shareData);
-                releaseLock();
-                return;
-            }
-        } catch (canvasErr) {
-            console.warn("تعذر استخراج الصورة.");
-        }
-
-        // إذا فشلت كل الطرق بسبب قيود هاتف المستخدم، نرسل التفاصيل المنسقة (نص فقط) بدون أخطاء
         Swal.close();
-        sendTextOnly();
+        sendTextOnlyNative(); // استخدام الدالة المحدثة
     }
 };
 
