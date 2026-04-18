@@ -1246,27 +1246,17 @@ db.collection("app_config").doc("notifications").onSnapshot(doc => {
 // قفل لمنع الضغط المزدوج
 window.isSharingInProgress = false;
 
-// 📱 دالة احترافية وسريعة لإرسال بيانات المنتج للعميل
 window.sendWhatsApp = async function(productId) {
     if (window.isSharingInProgress) return;
     window.isSharingInProgress = true;
-
     const releaseLock = () => { setTimeout(() => { window.isSharingInProgress = false; }, 800); };
 
     const p = products.find(prod => prod.id === productId);
-    if (!p) {
-        releaseLock();
-        return;
-    }
+    if (!p) { releaseLock(); return; }
     
     function cleanHTML(html) {
         if (!html) return "لا توجد تفاصيل إضافية.";
-        let text = html.replace(/<br\s*[\/]?>/gi, "\n")
-                       .replace(/<\/p>/gi, "\n")
-                       .replace(/<li>/gi, "- ")
-                       .replace(/<\/li>/gi, "\n")
-                       .replace(/<[^>]+>/g, ""); 
-        return text.trim().replace(/[\r\n]+/g, '\n');
+        return html.replace(/<br\s*[\/]?>/gi, "\n").replace(/<\/p>/gi, "\n").replace(/<li>/gi, "- ").replace(/<\/li>/gi, "\n").replace(/<[^>]+>/g, "").trim().replace(/[\r\n]+/g, '\n');
     }
 
     let plainDetails = cleanHTML(p.details);
@@ -1274,24 +1264,17 @@ window.sendWhatsApp = async function(productId) {
     const textMessage = `أهلاً بك عميلنا العزيز 🌟\nبناءً على طلبك، إليك تفاصيل المنتج:\n\n📦 *المنتج:* ${p.name || 'غير محدد'}\n🔖 *كود الموديل:* ${p.id || 'غير متوفر'}\n💰 *السعر:* ${priceText}\n\n📋 *أهم المواصفات:*\n${plainDetails}\n\nيسعدنا تواصلك معنا لتأكيد الطلب أو للإجابة على أي استفسار! 📞`;
 
     let imageUrl = (p.images && p.images.length > 0 && p.images[0].trim() !== "") ? p.images[0].trim() : null;
-    if (imageUrl) imageUrl = imageUrl.replace('http://', 'https://');
 
-    // 🌟 إرسال رابط الصورة بدلاً من تحويلها
     if (window.AndroidBridge && typeof window.AndroidBridge.shareToWhatsApp === "function") {
         Swal.fire({ title: 'جاري التجهيز...', text: 'لحظات...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
-        
-        // نرسل الرابط مباشرة للأندرويد ليتعامل معه
+        // إرسال الرابط والنص إلى الأندرويد
         window.AndroidBridge.shareToWhatsApp(imageUrl || "", textMessage);
-        
-        setTimeout(() => { Swal.close(); releaseLock(); }, 1000);
+        setTimeout(() => { Swal.close(); releaseLock(); }, 1500);
         return;
     }
 
-    // ==========================================
-    // الكود لمتصفح الويب العادي (إن وجد)
-    // ==========================================
-    const encodedMsg = encodeURIComponent(textMessage);
-    window.location.href = `whatsapp://send?text=${encodedMsg}`;
+    // متصفح عادي
+    window.location.href = `whatsapp://send?text=${encodeURIComponent(textMessage)}`;
     releaseLock();
 };
 
@@ -1313,8 +1296,7 @@ window.sendWhatsApp = async function(productId) {
     } catch (error) {
         Swal.close();
         sendTextOnlyNative(); // استخدام الدالة المحدثة
-    }
-};
+    };
 
       // نظام العملاء
       window.openCustomerModal = function(productName) {
