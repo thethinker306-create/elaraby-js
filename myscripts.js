@@ -1246,7 +1246,8 @@ db.collection("app_config").doc("notifications").onSnapshot(doc => {
 // قفل لمنع الضغط المزدوج
 window.isSharingInProgress = false;
 
-window.sendWhatsApp = async function(productId) {
+// 📱 دالة احترافية وسريعة لإرسال بيانات المنتج للعميل
+window.sendWhatsApp = function(productId) {
     if (window.isSharingInProgress) return;
     window.isSharingInProgress = true;
     const releaseLock = () => { setTimeout(() => { window.isSharingInProgress = false; }, 800); };
@@ -1265,15 +1266,15 @@ window.sendWhatsApp = async function(productId) {
 
     let imageUrl = (p.images && p.images.length > 0 && p.images[0].trim() !== "") ? p.images[0].trim() : null;
 
+    // 🌟 الإرسال عبر الأندرويد مباشرة
     if (window.AndroidBridge && typeof window.AndroidBridge.shareToWhatsApp === "function") {
         Swal.fire({ title: 'جاري التجهيز...', text: 'لحظات...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
-        // إرسال الرابط والنص إلى الأندرويد
         window.AndroidBridge.shareToWhatsApp(imageUrl || "", textMessage);
         setTimeout(() => { Swal.close(); releaseLock(); }, 1500);
         return;
     }
 
-    // متصفح عادي
+    // متصفح ويب عادي (في حال فتح الموقع خارج التطبيق)
     window.location.href = `whatsapp://send?text=${encodeURIComponent(textMessage)}`;
     releaseLock();
 };
