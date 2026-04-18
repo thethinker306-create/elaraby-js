@@ -1276,59 +1276,24 @@ window.sendWhatsApp = async function(productId) {
     let imageUrl = (p.images && p.images.length > 0 && p.images[0].trim() !== "") ? p.images[0].trim() : null;
     if (imageUrl) imageUrl = imageUrl.replace('http://', 'https://');
 
-    // 🚨 الحل لمشكلة واتساب ويب: استخدام whatsapp:// بدلاً من https://api...
-    const sendTextOnlyNative = () => {
-        const encodedMsg = encodeURIComponent(textMessage);
-        window.location.href = `whatsapp://send?text=${encodedMsg}`;
-        releaseLock();
-    };
-
-    // 🌟 الحل السحري لإرسال الصورة داخل تطبيق الأندرويد
+    // 🌟 إرسال رابط الصورة بدلاً من تحويلها
     if (window.AndroidBridge && typeof window.AndroidBridge.shareToWhatsApp === "function") {
         Swal.fire({ title: 'جاري التجهيز...', text: 'لحظات...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
         
-        if (imageUrl) {
-            try {
-                const canvasBase64 = await new Promise((resolve, reject) => {
-                    const img = new Image();
-                    img.crossOrigin = "Anonymous";
-                    img.onload = () => {
-                        const canvas = document.createElement('canvas');
-                        canvas.width = img.width;
-                        canvas.height = img.height;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0);
-                        // تحويل الصورة إلى Base64
-                        resolve(canvas.toDataURL('image/jpeg', 0.9));
-                    };
-                    img.onerror = reject;
-                    img.src = imageUrl;
-                });
-                Swal.close();
-                // إرسال الصورة والنص للأندرويد
-                window.AndroidBridge.shareToWhatsApp(canvasBase64, textMessage);
-                releaseLock();
-            } catch (e) {
-                Swal.close();
-                // إذا فشل جلب الصورة، ارسل النص فقط عبر الأندرويد
-                window.AndroidBridge.shareToWhatsApp("", textMessage);
-                releaseLock();
-            }
-        } else {
-            Swal.close();
-            window.AndroidBridge.shareToWhatsApp("", textMessage);
-            releaseLock();
-        }
-        return; // توقف هنا لأن التطبيق تكفل بالأمر
+        // نرسل الرابط مباشرة للأندرويد ليتعامل معه
+        window.AndroidBridge.shareToWhatsApp(imageUrl || "", textMessage);
+        
+        setTimeout(() => { Swal.close(); releaseLock(); }, 1000);
+        return;
     }
 
     // ==========================================
-    // الكود التالي سيعمل فقط إذا كان المستخدم يفتح الموقع من متصفح عادي
+    // الكود لمتصفح الويب العادي (إن وجد)
     // ==========================================
-    if (!navigator.share || !navigator.canShare || !imageUrl) {
-        sendTextOnlyNative();
-        return;
-    }
+    const encodedMsg = encodeURIComponent(textMessage);
+    window.location.href = `whatsapp://send?text=${encodedMsg}`;
+    releaseLock();
+};
 
     Swal.fire({ title: 'جاري التجهيز...', text: 'لحظات...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
 
