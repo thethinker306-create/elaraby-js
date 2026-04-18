@@ -1246,7 +1246,7 @@ db.collection("app_config").doc("notifications").onSnapshot(doc => {
 // قفل لمنع الضغط المزدوج
 window.isSharingInProgress = false;
 
-// 📱 دالة إرسال البيانات (رابط مباشر للأندرويد)
+// 📱 دالة إرسال البيانات (إرسال الرابط للأندرويد مباشرة)
 window.sendWhatsApp = function(productId) {
     if (window.isSharingInProgress) return;
     window.isSharingInProgress = true;
@@ -1265,7 +1265,6 @@ window.sendWhatsApp = function(productId) {
     const priceText = p.price ? `${Number(p.price).toLocaleString('en-US')} ج.م` : 'السعر عند التواصل';
     const textMessage = `أهلاً بك عميلنا العزيز 🌟\nبناءً على طلبك، إليك تفاصيل المنتج:\n\n📦 *المنتج:* ${p.name || 'غير محدد'}\n🔖 *كود الموديل:* ${p.id || 'غير متوفر'}\n💰 *السعر:* ${priceText}\n\n📋 *أهم المواصفات:*\n${plainDetails}\n\nيسعدنا تواصلك معنا لتأكيد الطلب أو للإجابة على أي استفسار! 📞`;
 
-    // جلب رابط الصورة
     let imageUrl = (p.images && p.images.length > 0 && p.images[0].trim() !== "") ? p.images[0].trim() : "";
     if (imageUrl.startsWith("//")) imageUrl = "https:" + imageUrl;
     else if (imageUrl.startsWith("http://")) imageUrl = imageUrl.replace("http://", "https://");
@@ -1274,12 +1273,11 @@ window.sendWhatsApp = function(productId) {
     if (window.AndroidBridge && typeof window.AndroidBridge.shareToWhatsApp === "function") {
         Swal.fire({ title: 'جاري التجهيز...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
         window.AndroidBridge.shareToWhatsApp(imageUrl, textMessage);
-        
         setTimeout(() => { Swal.close(); releaseLock(); }, 1500);
         return;
     }
 
-    // متصفح ويب عادي (في حال فتح الموقع خارج التطبيق)
+    // متصفح الويب العادي
     window.location.href = `whatsapp://send?text=${encodeURIComponent(textMessage)}`;
     releaseLock();
 };
