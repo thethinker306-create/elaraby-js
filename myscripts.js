@@ -1246,7 +1246,7 @@ db.collection("app_config").doc("notifications").onSnapshot(doc => {
 // قفل لمنع الضغط المزدوج
 window.isSharingInProgress = false;
 
-// 📱 دالة إرسال البيانات (إرسال الرابط للأندرويد مباشرة)
+// 📱 دالة احترافية وسريعة لإرسال بيانات المنتج للعميل
 window.sendWhatsApp = function(productId) {
     if (window.isSharingInProgress) return;
     window.isSharingInProgress = true;
@@ -1265,93 +1265,25 @@ window.sendWhatsApp = function(productId) {
     const priceText = p.price ? `${Number(p.price).toLocaleString('en-US')} ج.م` : 'السعر عند التواصل';
     const textMessage = `أهلاً بك عميلنا العزيز 🌟\nبناءً على طلبك، إليك تفاصيل المنتج:\n\n📦 *المنتج:* ${p.name || 'غير محدد'}\n🔖 *كود الموديل:* ${p.id || 'غير متوفر'}\n💰 *السعر:* ${priceText}\n\n📋 *أهم المواصفات:*\n${plainDetails}\n\nيسعدنا تواصلك معنا لتأكيد الطلب أو للإجابة على أي استفسار! 📞`;
 
+    // جلب رابط الصورة ومعالجة روابط بلوجر
     let imageUrl = (p.images && p.images.length > 0 && p.images[0].trim() !== "") ? p.images[0].trim() : "";
     if (imageUrl.startsWith("//")) imageUrl = "https:" + imageUrl;
     else if (imageUrl.startsWith("http://")) imageUrl = imageUrl.replace("http://", "https://");
 
-    // إرسال الرابط والنص للأندرويد مباشرة
+    // إرسال الرابط والنص للأندرويد مباشرة ليتكفل هو بالباقي
     if (window.AndroidBridge && typeof window.AndroidBridge.shareToWhatsApp === "function") {
         Swal.fire({ title: 'جاري التجهيز...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+        
         window.AndroidBridge.shareToWhatsApp(imageUrl, textMessage);
+        
         setTimeout(() => { Swal.close(); releaseLock(); }, 1500);
         return;
     }
 
-    // متصفح الويب العادي
+    // في حال فتح الموقع من متصفح عادي (Chrome/Safari) خارج التطبيق
     window.location.href = `whatsapp://send?text=${encodeURIComponent(textMessage)}`;
     releaseLock();
 };
-
-    if (!imageUrl) {
-        sendTextOnlyNative();
-        return;
-    }
-
-    Swal.fire({ title: 'جاري التجهيز...', text: 'لحظات...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
-
-    try {
-        // جلب الصورة وتحويلها
-        const response = await fetch(imageUrl, { mode: 'cors' });
-        if (!response.ok) throw new Error("Fetch failed");
-        
-        const blob = await response.blob();
-
-        // 🔥 إذا كان التطبيق مفتوحاً داخل تطبيق الأندرويد الخاص بك 🔥
-        if (window.AndroidBridge && typeof window.AndroidBridge.shareDirectToWhatsApp === "function") {
-            const reader = new FileReader();
-            reader.readAsDataURL(blob); 
-            reader.onloadend = function() {
-                const base64data = reader.result; // الصورة جاهزة كنص
-                Swal.close();
-                // إرسال الصورة الجاهزة للأندرويد
-                window.AndroidBridge.shareDirectToWhatsApp(base64data, textMessage);
-                releaseLock();
-            };
-            return;
-        }
-
-        // الكود العادي لمتصفح الويب (كروم/سفاري)
-        const fileToShare = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
-        const shareData = { text: textMessage, files: [fileToShare] };
-
-        if (!navigator.canShare || !navigator.canShare(shareData)) {
-            throw new Error("Cannot share files");
-        }
-
-        Swal.close();
-        await navigator.share(shareData);
-        releaseLock();
-
-    } catch (error) {
-        Swal.close();
-        // محاولة بديلة عبر Canvas إذا فشل الـ Fetch بسبب CORS
-        try {
-             const canvasBase64 = await new Promise((resolve, reject) => {
-                 const img = new Image();
-                 img.crossOrigin = "Anonymous";
-                 img.onload = () => {
-                     const canvas = document.createElement('canvas');
-                     canvas.width = img.width;
-                     canvas.height = img.height;
-                     const ctx = canvas.getContext('2d');
-                     ctx.drawImage(img, 0, 0);
-                     resolve(canvas.toDataURL('image/jpeg', 0.9));
-                 };
-                 img.onerror = reject;
-                 img.src = imageUrl;
-             });
-
-             if (window.AndroidBridge && typeof window.AndroidBridge.shareDirectToWhatsApp === "function") {
-                 Swal.close();
-                 window.AndroidBridge.shareDirectToWhatsApp(canvasBase64, textMessage);
-                 releaseLock();
-                 return;
-             }
-             throw new Error("Fallback failed");
-        } catch(e) {
-             sendTextOnlyNative();
-        }
-    };
 
       // نظام العملاء
       window.openCustomerModal = function(productName) {
