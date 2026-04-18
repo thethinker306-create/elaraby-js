@@ -1246,12 +1246,12 @@ db.collection("app_config").doc("notifications").onSnapshot(doc => {
 // قفل لمنع الضغط المزدوج
 window.isSharingInProgress = false;
 
-// 📱 دالة احترافية وسريعة لإرسال بيانات المنتج للعميل
-// 📱 دالة إرسال البيانات (مع دعم الأندرويد كمتصفح أصلي)
-window.sendWhatsApp = async function(productId) {
+// 📱 دالة إرسال البيانات (رابط مباشر للأندرويد)
+window.sendWhatsApp = function(productId) {
     if (window.isSharingInProgress) return;
     window.isSharingInProgress = true;
-    const releaseLock = () => { setTimeout(() => { window.isSharingInProgress = false; }, 800); };
+    
+    const releaseLock = () => { setTimeout(() => { window.isSharingInProgress = false; }, 1000); };
 
     const p = products.find(prod => prod.id === productId);
     if (!p) { releaseLock(); return; }
@@ -1265,14 +1265,24 @@ window.sendWhatsApp = async function(productId) {
     const priceText = p.price ? `${Number(p.price).toLocaleString('en-US')} ج.م` : 'السعر عند التواصل';
     const textMessage = `أهلاً بك عميلنا العزيز 🌟\nبناءً على طلبك، إليك تفاصيل المنتج:\n\n📦 *المنتج:* ${p.name || 'غير محدد'}\n🔖 *كود الموديل:* ${p.id || 'غير متوفر'}\n💰 *السعر:* ${priceText}\n\n📋 *أهم المواصفات:*\n${plainDetails}\n\nيسعدنا تواصلك معنا لتأكيد الطلب أو للإجابة على أي استفسار! 📞`;
 
-    let imageUrl = (p.images && p.images.length > 0 && p.images[0].trim() !== "") ? p.images[0].trim() : null;
-    if (imageUrl) imageUrl = imageUrl.replace('http://', 'https://');
+    // جلب رابط الصورة
+    let imageUrl = (p.images && p.images.length > 0 && p.images[0].trim() !== "") ? p.images[0].trim() : "";
+    if (imageUrl.startsWith("//")) imageUrl = "https:" + imageUrl;
+    else if (imageUrl.startsWith("http://")) imageUrl = imageUrl.replace("http://", "https://");
 
-    // دالة الطوارئ للنص فقط
-    const sendTextOnlyNative = () => {
-        window.location.href = `whatsapp://send?text=${encodeURIComponent(textMessage)}`;
-        releaseLock();
-    };
+    // إرسال الرابط والنص للأندرويد مباشرة
+    if (window.AndroidBridge && typeof window.AndroidBridge.shareToWhatsApp === "function") {
+        Swal.fire({ title: 'جاري التجهيز...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+        window.AndroidBridge.shareToWhatsApp(imageUrl, textMessage);
+        
+        setTimeout(() => { Swal.close(); releaseLock(); }, 1500);
+        return;
+    }
+
+    // متصفح ويب عادي (في حال فتح الموقع خارج التطبيق)
+    window.location.href = `whatsapp://send?text=${encodeURIComponent(textMessage)}`;
+    releaseLock();
+};
 
     if (!imageUrl) {
         sendTextOnlyNative();
@@ -1343,8 +1353,7 @@ window.sendWhatsApp = async function(productId) {
         } catch(e) {
              sendTextOnlyNative();
         }
-    }
-};
+    };
 
       // نظام العملاء
       window.openCustomerModal = function(productName) {
