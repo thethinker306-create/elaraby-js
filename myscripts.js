@@ -172,40 +172,40 @@ if (s.devPhone) {
 
       //  دالة جلب البيانات (محدثة)
 async function loadProducts() {
-        console.log("🚀 جاري تحميل المنتجات باحترافية...");
-        try {
-            const metaDoc = await db.collection("app_config").doc("metadata").get();
-            const serverUpdateTime = metaDoc.exists ? metaDoc.data().last_update_time : 0;
-            // استخدام localforage بدلاً من localStorage
-            const localUpdateTime = await localforage.getItem(CACHE_TIME_KEY) || 0;
-            const cachedData = await localforage.getItem(CACHE_KEY);
+    console.log("⚡ جاري استعادة المنتجات من الذاكرة المحلية...");
+    
+    try {
+        // 1. جلب البيانات من الكاش المحلي فوراً (سرعة فائقة)
+        const cachedData = await localforage.getItem(CACHE_KEY);
+        const localUpdateTime = await localforage.getItem(CACHE_TIME_KEY) || 0;
 
-            if (serverUpdateTime > localUpdateTime || !cachedData) {
-                console.log("🔄 تحديث البيانات من السيرفر...");
-                const snapshot = await db.collection("products").get();
-                const rawProducts = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
-                
-                // 🚀 تحسين الأداء: تجميد الكائنات لمنع المتصفح من استهلاك الرام
-                products = Object.freeze(rawProducts.map(Object.freeze));
-                
-                await localforage.setItem(CACHE_KEY, rawProducts);
-                await localforage.setItem(CACHE_TIME_KEY, serverUpdateTime);
-                if(typeof showNotify === 'function') showNotify("تم تحديث قاعدة البيانات بنجاح 🔄", "success");
-            } else {
-                console.log("✅ استخدام النسخة المحفوظة (IndexedDB)");
-                products = Object.freeze(cachedData.map(Object.freeze));
-            }
-            
-            renderCategories();
-        } catch (error) {
-            console.warn("⚠️ وضع الأوفلاين:", error);
-            const cached = await localforage.getItem(CACHE_KEY);
-            if(cached) {
-                products = Object.freeze(cached.map(Object.freeze));
-                renderCategories();
-            }
+        if (cachedData && cachedData.length > 0) {
+            products = Object.freeze(cachedData.map(Object.freeze));
+            renderCategories(); // ارسم الأقسام فوراً
+            console.log("✅ تم عرض المنتجات من الكاش");
         }
-      }
+
+        // 2. التحقق من السيرفر في الخلفية (بدون إزعاج المستخدم)
+        // نستخدم Metadata لتقليل استهلاك الـ Quota (قراءة واحدة فقط)
+        const metaDoc = await db.collection("app_config").doc("metadata").get();
+        const serverUpdateTime = metaDoc.exists ? metaDoc.data().last_update_time : 0;
+
+        if (serverUpdateTime > localUpdateTime || !cachedData) {
+            console.log("🔄 يوجد تحديث جديد.. جاري التحميل من السيرفر");
+            const snapshot = await db.collection("products").get();
+            const rawProducts = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
+            
+            // تحديث الكاش
+            await localforage.setItem(CACHE_KEY, rawProducts);
+            await localforage.setItem(CACHE_TIME_KEY, serverUpdateTime);
+            
+            products = Object.freeze(rawProducts.map(Object.freeze));
+            renderCategories(); // تحديث القائمة بالبيانات الجديدة
+        }
+    } catch (error) {
+        console.warn("⚠️ فشل الاتصال بالسيرفر، التطبيق يعمل في وضع الأوفلاين");
+    }
+}
       
 // =======================================================
 // 🧠 1. دالة رسم الأقسام الذكية (نظام متداخل احترافي 3 مستويات)
