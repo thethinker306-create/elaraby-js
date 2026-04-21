@@ -1735,12 +1735,10 @@ let salesListener = null;
 
 window.updateSalesUI = function() {
     const tbody = document.getElementById('sales-list-body');
-    const unsentList = safeParseJSON('unsent_sales_cache',[]);
+    const unsentList = safeParseJSON('unsent_sales_cache', []); // المسودات فقط
     const sDateEl = document.getElementById('s-date');
     const selectedDate = (sDateEl && sDateEl.value) ? sDateEl.value : new Date().toISOString().split('T')[0];
     const dayTotalEl = document.getElementById('day-total');
-    
-    // 🟢 التعديل الأهم: جلب المعرف مباشرة من الذاكرة
     const currentSellerId = localStorage.getItem('seller_doc_id');
 
     if (!tbody) return;
@@ -1748,86 +1746,53 @@ window.updateSalesUI = function() {
     let html = "";
     let localTotal = 0;
 
-    // 1. عرض المسودات المحلية
+    // 1. عرض المسودات (التي لم تُحفظ بعد) باللون البرتقالي
     unsentList.forEach(item => {
-        const q = Number(item.qty) || 1;
-        const p = Number(item.price) || 0;
-        const rowTotal = p * q;
+        const rowTotal = (Number(item.price) || 0) * (Number(item.qty) || 1);
         localTotal += rowTotal;
-
         html += `
         <tr style="background-color: #fff8e1;">
             <td style='padding:8px;'>${item.branch}</td>
-            <td style='padding:8px;'>${item.product}</td>
-            <td style='padding:8px;'>${q}</td>
-            <td style='font-weight:bold; color:#f57c00;'>${p.toLocaleString()}</td>
-            <td title="حذف" onclick="removeFromUnsent('${item.localId}')" style="cursor:pointer; color:red;">&#10006;</td>
+            <td style='padding:8px;'>${item.product} (غير محفوظ)</td>
+            <td style='padding:8px;'>${item.qty}</td>
+            <td style='font-weight:bold; color:#f57c00;'>${item.price.toLocaleString()}</td>
+            <td onclick="removeFromUnsent('${item.localId}')" style="cursor:pointer; color:red;">&#10006;</td>
         </tr>`;
     });
 
-    const pendingCountEl = document.getElementById('pending-count');
-    if (pendingCountEl) pendingCountEl.innerText = unsentList.length;
+    if (salesListener) salesListener(); 
 
-    tbody.innerHTML = html + `<tr><td colspan="5" style="text-align:center; font-size:10px; color:#777;">جاري الاتصال...</td></tr>`;
-    if (dayTotalEl) dayTotalEl.innerText = localTotal.toLocaleString();
+    // 2. جلب كل المبيعات من السيرفر لهذا البائع ولهذا التاريخ
+    // حتى لو حذف التطبيق وأعاده، ستظهر هنا فور تسجيل الدخول
+    salesListener = db.collection('sales_transactions')
+        .where('sellerId', '==', currentSellerId)
+        .where('date', '==', selectedDate)
+        .orderBy('createdAt', 'desc')
+        .onSnapshot(snap => {
+            let serverHtml = "";
+            let serverTotal = 0;
 
-    // إذا لم يكن هناك بائع مسجل، توقف هنا
-    if (!currentSellerId) {
-        tbody.innerHTML = html + `<tr><td colspan="5" style="text-align:center; color:red;">يرجى تسجيل الدخول لعرض المبيعات المحفوظة</td></tr>`;
-        return;
-    }
+            snap.forEach(doc => {
+                const item = doc.data();
+                const rowTotal = (Number(item.price) || 0) * (Number(item.qty) || 1);
+                serverTotal += rowTotal;
 
-    // 2. جلب البيانات من السيرفر
-    if(salesListener) salesListener(); 
+                serverHtml += `
+                <tr style="background:#f0fdf4;">
+                    <td style='padding:8px;'>${item.branch}</td>
+                    <td style='padding:8px;'>${item.product}</td>
+                    <td style='padding:8px;'>${item.qty || 1}</td>
+                    <td style='font-weight:bold; color:#1a73e8;'>${item.price.toLocaleString()}</td>
+                    <td style="padding:8px;">
+                        <button onclick="deleteServerSale('${doc.id}')" style="background:none; border:none; cursor:pointer;">❌</button>
+                    </td>
+                </tr>`;
+            });
 
-salesListener = db.collection('sales_transactions')
-    .where('sellerId', '==', currentSellerId)
-    .where('date', '==', selectedDate)
-    .orderBy('createdAt', 'desc')
-    .onSnapshot(snap => {
-        let serverHtml = "";
-        let serverTotal = 0;
-
-        if (snap.empty && unsentList.length === 0) {
-             tbody.innerHTML = html + `<tr><td colspan="5" style="text-align:center; padding:10px;">لا توجد مبيعات اليوم</td></tr>`;
-             return;
-        }
-
-        snap.forEach(doc => {
-            const item = doc.data();
-            const q = Number(item.qty) || 1; 
-            const p = Number(item.price) || 0;
-            const rowTotal = p * q; // حساب الإجمالي (سعر * كمية)
-            
-            serverTotal += rowTotal;
-
-            serverHtml += `
-            <tr style="background:#f0fdf4;"> <!-- لون خلفية مختلف للمحفوظ -->
-                <td style='padding:8px;'>${item.branch}</td>
-                <td style='padding:8px;'>
-                    ${item.product}
-                    <div style="font-size:10px; color:#666;">(مؤكد)</div>
-                </td>
-                <td style='padding:8px;'>${q}</td>
-                <td style='font-weight:bold; color:#1a73e8;'>${p.toLocaleString()}</td>
-                <td style="padding:8px;">
-                    <!-- زر الحذف الجديد -->
-                    <button onclick="deleteServerSale('${doc.id}')" style="background:none; border:none; cursor:pointer;" title="حذف من السيرفر">
-                        ❌
-                    </button>
-                </td>
-            </tr>`;
+            tbody.innerHTML = html + serverHtml;
+            if (dayTotalEl) dayTotalEl.innerText = (localTotal + serverTotal).toLocaleString();
         });
-
-        tbody.innerHTML = html + serverHtml;
-        
-        if (dayTotalEl) dayTotalEl.innerText = (localTotal + serverTotal).toLocaleString();
-
-    }, err => {
-        console.error("🔥 خطأ فايربيس:", err);
-        tbody.innerHTML = html + `<tr><td colspan="5" style="color:red;">خطأ في التحميل</td></tr>`;
-    });
-    };
+};
 
 
 // حذف من الكاش قبل الإرسال
