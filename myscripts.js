@@ -1447,53 +1447,6 @@ window.saveCustomerData = async function() {
 };
 
 
-
-// ==========================================
-// 1. إدارة وضع "الحذف المتعدد"
-// ==========================================
-window.enterBulkDeleteMode = function() {
-    document.getElementById('defaultActionBtns').style.display = 'none';
-    document.getElementById('bulkActionBtns').style.display = 'flex';
-    document.getElementById('customersTable').classList.add('bulk-active');
-};
-
-window.exitBulkDeleteMode = function() {
-    document.getElementById('defaultActionBtns').style.display = 'block';
-    document.getElementById('bulkActionBtns').style.display = 'none';
-    document.getElementById('customersTable').classList.remove('bulk-active');
-    
-    // إزالة التحديد من جميع المربعات عند الإلغاء
-    const selectAllBtn = document.getElementById('selectAllCust');
-    if(selectAllBtn) selectAllBtn.checked = false;
-    const checkboxes = document.querySelectorAll('.cust-checkbox');
-    checkboxes.forEach(cb => cb.checked = false);
-};
-
-
-
-// تحديث حالة "تحديد الكل" عند ضغط مربعات فردية
-window.updateSelectAllUI = function() {
-    const allBoxes = document.querySelectorAll('.cust-checkbox');
-    const checkedBoxes = document.querySelectorAll('.cust-checkbox:checked');
-    const selectAll = document.getElementById('selectAllCust');
-    if(selectAll && allBoxes.length > 0) {
-        selectAll.checked = (allBoxes.length === checkedBoxes.length);
-    }
-};
-
-// ===================================
-// 1. دالة حذف المربعات المحددة (الحذف المتعدد) - نسخة مستقرة 100%
-// ====================================
-window.deleteSelectedCustomers = async function() {
-    // جلب كافة المربعات المحددة
-    const checkedBoxes = document.querySelectorAll('.cust-checkbox:checked');
-    
-    // تحويل العناصر المحددة إلى مصفوفة من المعرفات IDs
-    let idsToDelete = [];
-    checkedBoxes.forEach(function(box) {
-        idsToDelete.push(box.value);
-    });
-
     // إذا لم يتم اختيار أي عميل
     if (idsToDelete.length === 0) {
         Swal.fire({
@@ -1620,9 +1573,125 @@ window.renderHistory = function() {
         });
 };
 
+
+// ====================================
+// 🚀 نظام إدارة العملاء الشامل (الحذف الفردي والمتعدد)
 // ===================================
-// 2. دالة حذف عميل فردي (بدون ظهور رابط الموقع)
-// ===================================
+
+// 1. الدخول لوضع الحذف المتعدد (إظهار المربعات)
+window.enterBulkDeleteMode = function() {
+    const defaultBar = document.getElementById('defaultActionBtns');
+    const bulkBar = document.getElementById('bulkActionBtns');
+    const table = document.getElementById('customersTable');
+
+    if(defaultBar) defaultBar.style.display = 'none';
+    if(bulkBar) bulkBar.style.display = 'flex';
+    if(table) table.classList.add('bulk-active');
+};
+
+// 2. الخروج من وضع الحذف المتعدد (إخفاء المربعات)
+window.exitBulkDeleteMode = function() {
+    const defaultBar = document.getElementById('defaultActionBtns');
+    const bulkBar = document.getElementById('bulkActionBtns');
+    const table = document.getElementById('customersTable');
+
+    if(defaultBar) defaultBar.style.display = 'block';
+    if(bulkBar) bulkBar.style.display = 'none';
+    if(table) table.classList.remove('bulk-active');
+
+    // إلغاء تحديد كل المربعات عند الخروج
+    const selectAllBtn = document.getElementById('selectAllCust');
+    if(selectAllBtn) selectAllBtn.checked = false;
+    document.querySelectorAll('.cust-checkbox').forEach(cb => cb.checked = false);
+};
+
+// 3. تحديد أو إلغاء تحديد الكل
+window.toggleAllCustomers = function(source) {
+    const checkboxes = document.querySelectorAll('.cust-checkbox');
+    checkboxes.forEach(cb => cb.checked = source.checked);
+};
+
+// 4. تحديث حالة زر "تحديد الكل" عند الضغط على مربع واحد
+window.updateSelectAllUI = function() {
+    const allBoxes = document.querySelectorAll('.cust-checkbox');
+    const checkedBoxes = document.querySelectorAll('.cust-checkbox:checked');
+    const selectAll = document.getElementById('selectAllCust');
+    if(selectAll && allBoxes.length > 0) {
+        selectAll.checked = (allBoxes.length === checkedBoxes.length);
+    }
+};
+
+// 5. دالة الحذف المتعدد (للمربعات المحددة) بصيغة احترافية بدون رابط
+window.deleteSelectedCustomers = async function() {
+    const checkedBoxes = document.querySelectorAll('.cust-checkbox:checked');
+    let idsToDelete =[];
+    
+    for (let i = 0; i < checkedBoxes.length; i++) {
+        idsToDelete.push(checkedBoxes[i].value);
+    }
+
+    if (idsToDelete.length === 0) {
+        Swal.fire({
+            icon: 'info',
+            title: 'تنبيه',
+            text: 'من فضلك اختر عميل واحد على الأقل لحذفه.',
+            confirmButtonText: 'حسناً',
+            customClass: { popup: 'ai-swal-popup' }
+        });
+        return;
+    }
+
+    Swal.fire({
+        title: `حذف ${idsToDelete.length} عملاء؟`,
+        text: "هل أنت متأكد؟ سيتم حذف العملاء المحددين نهائياً.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: '<i class="fa-solid fa-trash"></i> نعم، احذفهم',
+        cancelButtonText: 'إلغاء',
+        customClass: { popup: 'ai-swal-popup' }
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            Swal.fire({
+                title: 'جاري الحذف...',
+                allowOutsideClick: false,
+                didOpen: () => { Swal.showLoading(); }
+            });
+
+            try {
+                const batch = db.batch();
+                idsToDelete.forEach(docId => {
+                    const docRef = db.collection('seller_customers').doc(docId);
+                    batch.delete(docRef);
+                    
+                    // إلغاء منبه الأندرويد إن وجد
+                    if (window.AndroidBridge && typeof window.AndroidBridge.cancelReminder === "function") {
+                        window.AndroidBridge.cancelReminder(docId);
+                    }
+                });
+
+                await batch.commit();
+
+                Swal.fire({
+                    icon: 'success',
+                    title: 'تم الحذف بنجاح',
+                    text: `تم مسح ${idsToDelete.length} سجل بنجاح.`,
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+
+                window.exitBulkDeleteMode();
+
+            } catch (error) {
+                console.error("Bulk Delete Error:", error);
+                Swal.fire({ icon: 'error', title: 'فشل الحذف', text: error.message });
+            }
+        }
+    });
+};
+
+// 6. دالة الحذف الفردي للعميل (بدون ظهور رابط الموقع إطلاقاً)
 window.deleteCloudRecord = function(docId) {
     Swal.fire({
         title: 'تأكيد الحذف',
@@ -1631,7 +1700,7 @@ window.deleteCloudRecord = function(docId) {
         showCancelButton: true,
         confirmButtonColor: '#ef4444',
         cancelButtonColor: '#6c757d',
-        confirmButtonText: 'نعم، احذف',
+        confirmButtonText: '<i class="fa-solid fa-trash"></i> نعم، احذف',
         cancelButtonText: 'إلغاء',
         customClass: { popup: 'ai-swal-popup' }
     }).then(async (result) => {
@@ -1639,7 +1708,6 @@ window.deleteCloudRecord = function(docId) {
             Swal.fire({ title: 'جاري الحذف...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
             try {
                 await db.collection('seller_customers').doc(docId).delete();
-                // تنظيف منبه الأندرويد
                 if (window.AndroidBridge && typeof window.AndroidBridge.cancelReminder === "function") {
                     window.AndroidBridge.cancelReminder(docId);
                 }
@@ -1650,24 +1718,6 @@ window.deleteCloudRecord = function(docId) {
         }
     });
 };
-
-// ==========================================
-// 4. دوال التحكم بمربعات التحديد (Checkbox Logic)
-// ==========================================
-window.toggleAllCustomers = function(source) {
-    const checkboxes = document.querySelectorAll('.cust-checkbox');
-    checkboxes.forEach(cb => cb.checked = source.checked);
-};
-
-window.updateSelectAllUI = function() {
-    const allBoxes = document.querySelectorAll('.cust-checkbox');
-    const checkedBoxes = document.querySelectorAll('.cust-checkbox:checked');
-    const selectAll = document.getElementById('selectAllCust');
-    if(selectAll) {
-        selectAll.checked = (allBoxes.length > 0 && allBoxes.length === checkedBoxes.length);
-    }
-};
-
 
 // 4. إصلاح زر حفظ المبيعات (Commit Sales)
 window.commitAllSales = async function() {
@@ -1752,9 +1802,8 @@ let history = safeParseJSON('elaraby_sales_v3',[]);
               deferredPrompt = null;
               if(outcome === 'accepted' && installContainer) installContainer.style.display = 'none';
           } else {
-             alert("⚠️ اضغط على خيارات المتصفح واختر 'Install App' أو 'Add to Home Screen'");
-          }
-      };
+
+Swal.fire({ icon: 'info', title: 'تثبيت التطبيق', text: "اضغط على خيارات المتصفح واختر 'Install App' أو 'Add to Home Screen'", confirmButtonText: 'حسناً' });
       
       function checkNet() {
         const ind = document.getElementById('net-indicator');
@@ -2419,10 +2468,7 @@ document.addEventListener('DOMContentLoaded', function() {
       window.copyCode = function(code) {
           navigator.clipboard.writeText(code).then(() => {
 
-              // تأثير بصري بسيط عند النسخ
-              alert("تم نسخ الكود: " + code + " ✅");
-          });
-      };
+Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'تم نسخ الكود: ' + code, showConfirmButton: false, timer: 2000 });
       
       document.getElementById('bundleModal').addEventListener('click', function(e) {
           if (e.target === this) closeBundleModal();
