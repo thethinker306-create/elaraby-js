@@ -1446,12 +1446,35 @@ window.saveCustomerData = async function() {
     }
 };
 
-// ==================================
-// 2. تحديث دالة عرض السجل (لإضافة صناديق التحديد Checkboxes)
-// =====================================
+
+
+// ==========================================
+// 1. إدارة وضع "الحذف المتعدد"
+// ==========================================
+window.enterBulkDeleteMode = function() {
+    document.getElementById('defaultActionBtns').style.display = 'none';
+    document.getElementById('bulkActionBtns').style.display = 'flex';
+    document.getElementById('customersTable').classList.add('bulk-active');
+};
+
+window.exitBulkDeleteMode = function() {
+    document.getElementById('defaultActionBtns').style.display = 'block';
+    document.getElementById('bulkActionBtns').style.display = 'none';
+    document.getElementById('customersTable').classList.remove('bulk-active');
+    
+    // إزالة التحديد من جميع المربعات عند الإلغاء
+    const selectAllBtn = document.getElementById('selectAllCust');
+    if(selectAllBtn) selectAllBtn.checked = false;
+    const checkboxes = document.querySelectorAll('.cust-checkbox');
+    checkboxes.forEach(cb => cb.checked = false);
+};
+
+// ==========================================
+// 2. دالة عرض سجل العملاء (تحديث فوري)
+// ==========================================
 window.renderHistory = function() {
     const tbody = document.getElementById('historyBody');
-    const sellerId = getSellerId();
+    const sellerId = localStorage.getItem('seller_doc_id'); // استخدمنا localStorage المباشر لضمان العمل
 
     if(!tbody) return;
     
@@ -1460,18 +1483,17 @@ window.renderHistory = function() {
         return;
     }
 
-    if(customersUnsubscribe) customersUnsubscribe();
+    if(window.customersUnsubscribe) window.customersUnsubscribe();
 
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">جاري التحميل من السيرفر...</td></tr>';
 
-    customersUnsubscribe = db.collection('seller_customers')
+    window.customersUnsubscribe = db.collection('seller_customers')
         .where('sellerId', '==', sellerId)
         .orderBy('createdAt', 'desc')
         .limit(50)
         .onSnapshot((snapshot) => {
-            // إعادة ضبط زر التحديد للكل عند تحديث البيانات
-            const selectAllBtn = document.getElementById('selectAllCust');
-            if(selectAllBtn) selectAllBtn.checked = false;
+            // تحديث واجهة التحديد للكل
+            updateSelectAllUI();
 
             if(snapshot.empty) {
                 tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#777;">لا يوجد عملاء مسجلين لك حتى الآن</td></tr>';
@@ -1485,8 +1507,8 @@ window.renderHistory = function() {
                 
                 return `
                 <tr>
-                    <td style="padding:10px; border-bottom:1px solid #eee;">
-                        <input type="checkbox" class="cust-checkbox" value="${doc.id}" onchange="updateSelectAllUI()" style="transform: scale(1.3); cursor: pointer;">
+                    <td class="bulk-col">
+                        <input type="checkbox" class="cust-checkbox" value="${doc.id}" onchange="updateSelectAllUI()" style="transform: scale(1.3); cursor: pointer; margin: 0;">
                     </td>
                     <td style="padding:10px; border-bottom:1px solid #eee;">${item.date}</td>
                     <td style="padding:10px; border-bottom:1px solid #eee; font-weight:bold;">${item.name}</td>
@@ -1500,7 +1522,7 @@ window.renderHistory = function() {
                         ${item.status}
                     </td>
                     <td style="padding:10px; border-bottom:1px solid #eee;">
-                        <button onclick="deleteCloudRecord('${doc.id}')" style="color:red; border:none; background:none; cursor:pointer; font-size:16px; transition: 0.2s;" onmouseover="this.style.transform='scale(1.2)'" onmouseout="this.style.transform='scale(1)'">❌</button>
+                        <button onclick="deleteCloudRecord('${doc.id}')" style="color:#ef4444; border:none; background:none; cursor:pointer; font-size:16px; transition: 0.2s;" onmouseover="this.style.transform='scale(1.2)'" onmouseout="this.style.transform='scale(1)'" title="حذف العميل">❌</button>
                     </td>
                 </tr>`;
             }).join('');
@@ -1510,9 +1532,40 @@ window.renderHistory = function() {
         });
 };
 
-// ==================================
-// 3. دوال الحذف المتعدد (تحديد الكل / الحذف)
-// ===================================
+// ==========================================
+// 3. دالة حذف عميل فردي (تعمل 100%)
+// ==========================================
+window.deleteCloudRecord = function(docId) {
+    Swal.fire({
+        title: 'تأكيد الحذف',
+        text: 'هل أنت متأكد من حذف هذا العميل نهائياً؟',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'نعم، احذف',
+        cancelButtonText: 'إلغاء',
+        customClass: { popup: 'ai-swal-popup' }
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            Swal.fire({ title: 'جاري الحذف...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+            try {
+                await db.collection('seller_customers').doc(docId).delete();
+                // تنظيف منبه الأندرويد
+                if (window.AndroidBridge && window.AndroidBridge.cancelReminder) {
+                    window.AndroidBridge.cancelReminder(docId);
+                }
+                Swal.fire({ icon: 'success', title: 'تم الحذف بنجاح', timer: 1500, showConfirmButton: false });
+            } catch(e) {
+                Swal.fire('خطأ', 'حدث خطأ أثناء الحذف: ' + e.message, 'error');
+            }
+        }
+    });
+};
+
+// ==========================================
+// 4. دوال التحكم بمربعات التحديد (Checkbox Logic)
+// ==========================================
 window.toggleAllCustomers = function(source) {
     const checkboxes = document.querySelectorAll('.cust-checkbox');
     checkboxes.forEach(cb => cb.checked = source.checked);
@@ -1527,7 +1580,10 @@ window.updateSelectAllUI = function() {
     }
 };
 
-window.deleteSelectedCustomers = async function() {
+// ==========================================
+// 5. دالة حذف المحدد (الحذف المتعدد)
+// ==========================================
+window.deleteSelectedCustomers = function() {
     const checkedBoxes = document.querySelectorAll('.cust-checkbox:checked');
     const idsToDelete = Array.from(checkedBoxes).map(cb => cb.value);
 
@@ -1542,28 +1598,28 @@ window.deleteSelectedCustomers = async function() {
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#ef4444',
-        cancelButtonColor: '#3b82f6',
+        cancelButtonColor: '#6c757d',
         confirmButtonText: 'نعم، احذف المحدد',
-        cancelButtonText: 'إلغاء'
+        cancelButtonText: 'إلغاء',
+        customClass: { popup: 'ai-swal-popup' }
     }).then(async (result) => {
         if (result.isConfirmed) {
             Swal.fire({ title: 'جاري الحذف...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
-            
             try {
-                // استخدام Firebase Batch للحذف دفعة واحدة (أفضل للأداء)
                 const batch = db.batch();
                 idsToDelete.forEach(id => {
                     const docRef = db.collection('seller_customers').doc(id);
                     batch.delete(docRef);
-                    // تنظيف منبه الأندرويد
                     if (window.AndroidBridge && window.AndroidBridge.cancelReminder) {
                         window.AndroidBridge.cancelReminder(id);
                     }
                 });
                 
                 await batch.commit();
-                
                 Swal.fire({ icon: 'success', title: 'تم الحذف بنجاح', timer: 1500, showConfirmButton: false });
+                
+                // الخروج من وضع الحذف المتعدد بعد الانتهاء
+                exitBulkDeleteMode();
                 
             } catch(e) {
                 Swal.fire('خطأ', 'فشل الحذف: ' + e.message, 'error');
@@ -1572,41 +1628,6 @@ window.deleteSelectedCustomers = async function() {
     });
 };
 
-// ==========================================
-// 1. دالة حذف عميل واحد (بتصميم احترافي بدون روابط)
-// ==========================================
-window.deleteCloudRecord = async function(docId) {
-    // استخدام SweetAlert بدلاً من confirm الافتراضي لمنع ظهور الرابط
-    Swal.fire({
-        title: 'تأكيد الحذف',
-        text: 'هل أنت متأكد من حذف هذا العميل؟',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        cancelButtonColor: '#6c757d',
-        confirmButtonText: 'نعم، احذف',
-        cancelButtonText: 'إلغاء',
-        customClass: { popup: 'ai-swal-popup' }
-    }).then(async (result) => {
-        if (result.isConfirmed) {
-            Swal.fire({ title: 'جاري الحذف...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
-            try {
-                await db.collection('seller_customers').doc(docId).delete();
-                // إلغاء المنبه من الأندرويد إن وجد
-                if (window.AndroidBridge && window.AndroidBridge.cancelReminder) {
-                    window.AndroidBridge.cancelReminder(docId);
-                }
-                Swal.fire({ icon: 'success', title: 'تم الحذف', timer: 1500, showConfirmButton: false });
-            } catch(e) {
-                Swal.fire('خطأ', 'لم يتم الحذف: ' + e.message, 'error');
-            }
-        }
-    });
-};
-// 6. دالة مسح السجل بالكامل (تحذير)
-window.clearHistory = function() {
-    Swal.fire('تنبيه', 'لا يمكن مسح سجل السيرفر بالكامل بضغطة زر للأمان. قم بحذف العملاء واحداً تلو الآخر.', 'info');
-};
 
 // 4. إصلاح زر حفظ المبيعات (Commit Sales)
 window.commitAllSales = async function() {
@@ -2944,19 +2965,7 @@ window.handleCloudCall = async function(docId, phone) {
     } catch(e) { console.error("Call Update Error", e); }
 };
 
-window.deleteCloudRecord = async function(docId) {
-    if(confirm("هل أنت متأكد من حذف هذا العميل؟")) {
-        try {
-            await db.collection('seller_customers').doc(docId).delete();
-            // 🔥 إلغاء منبه الأندرويد
-            if (window.AndroidBridge && window.AndroidBridge.cancelReminder) {
-                window.AndroidBridge.cancelReminder(docId);
-            }
-        } catch(e) {
-            Swal.fire('خطأ', 'لم يتم الحذف: ' + e.message, 'error');
-        }
-    }
-};
+
 
 // 4. دالة التأجيل (Postpone) مع ربط منبه الأندرويد
 window.postponeCloudReminder = async function(docId) {
