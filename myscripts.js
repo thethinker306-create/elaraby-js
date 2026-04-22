@@ -1,4 +1,4 @@
-  //<![CDATA[
+ //<![CDATA[
       (function(){
   // قائمة النطاقات المسموح بها 
   var allowedDomains = ["elaraby-products.blogspot.com", "localhost"]; 
@@ -1565,16 +1565,6 @@ window.deleteSelectedCustomers = async function() {
         idsToDelete.push(checkedBoxes[i].value);
     }
 
-    if (idsToDelete.length === 0) {
-        Swal.fire({
-            icon: 'info',
-            title: 'تنبيه',
-            text: 'من فضلك اختر عميل واحد على الأقل لحذفه.',
-            confirmButtonText: 'حسناً',
-            customClass: { popup: 'ai-swal-popup' }
-        });
-        return;
-    }
 
     Swal.fire({
         title: `حذف ${idsToDelete.length} عملاء؟`,
