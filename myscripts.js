@@ -1,7 +1,8 @@
-//<![CDATA[
-(function(){
+
+      //<![CDATA[
+      (function(){
   // قائمة النطاقات المسموح بها 
-  var allowedDomains =["elaraby-products.blogspot.com", "localhost"]; 
+  var allowedDomains = ["elaraby-products.blogspot.com", "localhost"]; 
   var isAllowed = false;
   var currentDomain = window.location.hostname;
 
@@ -23,47 +24,57 @@
     throw new Error("Security Violation: Unauthorized Domain");
   }
 })();
+      // إعدادات الكاش والتهيئة
+      const CACHE_KEY = 'elaraby_products_cache_v3'; 
+      const CACHE_TIME_KEY = 'elaraby_cache_time';
+      const RECENT_SEARCH_KEY = "elaraby_recent_searches";
+      // متغيرات النظام
+      let products = [];
+      let currentGal = [];
+      let currentIdx = 0;
+      let scale = 1;
+      let startX = 0, startY = 0, lastTap = 0;
+      let currentEffect = 'slideInUp';
+      let currentSpeed = '0.5';
+      let deferredPrompt; // PWA Variable
+      window.officialDevName = "Abd elmoneim";
+      
 
-// إعدادات الكاش والتهيئة
-const CACHE_KEY = 'elaraby_products_cache_v3'; 
-const CACHE_TIME_KEY = 'elaraby_cache_time';
-const RECENT_SEARCH_KEY = "elaraby_recent_searches";
-// متغيرات النظام
-let products = [];
-let currentGal =[];
-let currentIdx = 0;
-let scale = 1;
-let startX = 0, startY = 0, lastTap = 0;
-let currentEffect = 'slideInUp';
-let currentSpeed = '0.5';
-let deferredPrompt; // PWA Variable
-window.officialDevName = "Abd elmoneim";
+      // 2. إعداد Firebase
+      const firebaseConfig = { apiKey: "AIzaSyAsjxa0sr72e2PaEMOU9aVapNaCKcD6hUE", projectId: "elaraby-products" };
+      try { firebase.initializeApp(firebaseConfig); } catch(e) { console.log("Firebase loaded already"); }
+      const db = firebase.firestore();
 
-// 2. إعداد Firebase
-const firebaseConfig = { apiKey: "AIzaSyAsjxa0sr72e2PaEMOU9aVapNaCKcD6hUE", projectId: "elaraby-products" };
-try { firebase.initializeApp(firebaseConfig); } catch(e) { console.log("Firebase loaded already"); }
-const db = firebase.firestore();
-
-// 3. دالة تنظيف النصوص 
+      // 3. دالة تنظيف النصوص 
 function escapeStr(str) {
     if (!str) return '';
+    // استبدال الرموز الخطيرة لمنع تنفيذ أي كود HTML أو Javascript
     const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#x27;' };
     return str.replace(/[&<>"']/ig, (match) => (map[match]));
 }
 
-// دالة تحويل السعر
+// دالة تحويل السعر من نص خام إلى تنسيق مالي بفاصلة آلاف
 function formatPriceForDisplay(price) {
     if (!price || price === "") return '';
+    
+    // 1. تنظيف النص من أي فواصل قديمة أو حروف (ما عدا الأرقام والنقطة العشرية)
     let cleanPrice = String(price).replace(/[^\d.]/g, '');
+    
     let num = parseFloat(cleanPrice);
+    
+    // 2. إذا لم يكن رقماً صحيحاً، نعرض النص كما هو
     if (isNaN(num)) return price;
+
+    // 3. التنسيق: إضافة فواصل الآلاف (مثلاً: 25699 يصبح 25,699)
+    // نستخدم 'en-US' للحصول على الفاصلة اللاتينية المتعارف عليها في الأسعار
     let formatted = new Intl.NumberFormat('en-US', {
-        maximumFractionDigits: 0
+        maximumFractionDigits: 0 // عادة في الأجهزة المنزلية لا نحتاج للكسور .00
     }).format(num);
+
     return formatted + ' ج.م';
 }
    
-// =======================
+   // =======================
 // 🛡️ دالة الحماية المنيعة لقراءة الـ LocalStorage
 // =======================
 function safeParseJSON(key, defaultValue =[], storageType = localStorage) {
@@ -72,19 +83,20 @@ function safeParseJSON(key, defaultValue =[], storageType = localStorage) {
         if (!item) return defaultValue;
         return JSON.parse(item);
     } catch (error) {
-        console.error(`⚠️ تم اكتشاف بيانات تالفة في (${key}). تم إعادة ضبطها.`);
+        console.error(`⚠️ تم اكتشاف بيانات تالفة في (${key}). تم إعادة ضبطها لحماية التطبيق.`);
         storageType.setItem(key, JSON.stringify(defaultValue));
         return defaultValue;
     }
 }
-
-// 1. تفعيل التخزين المحلي لقاعدة البيانات
+ // ================================
+// 1. تفعيل التخزين المحلي لقاعدة البيانات (Offline Support)
+// =================================
 db.enablePersistence()
   .catch((err) => {
       if (err.code == 'failed-precondition') {
           console.log('Multiple tabs open, persistence can only be enabled in one tab at a a time.');
       } else if (err.code == 'unimplemented') {
-          console.log('Browser does not support persistence');
+          console.log('The current browser does not support all of the features required to enable persistence');
       }
   });
   
@@ -96,7 +108,7 @@ window.aiConfig = {
     promptCompare: ""
 };
 
-// الاستماع لحالة التفعيل
+// الاستماع لحالة التفعيل ومفتاح الـ API والـ Prompts من السيرفر
 db.collection("app_config").doc("ai_settings").onSnapshot(doc => {
     if(doc.exists) {
         const data = doc.data();
@@ -104,62 +116,77 @@ db.collection("app_config").doc("ai_settings").onSnapshot(doc => {
         window.aiConfig.apiKey = data.apiKey || "";
         window.aiConfig.promptConvince = data.promptConvince || "";
         window.aiConfig.promptCompare = data.promptCompare || "";
+        
+        // إخفاء أو إظهار أزرار الذكاء الاصطناعي
         document.documentElement.style.setProperty('--ai-display', window.aiConfig.active ? 'flex' : 'none');
     }
 });
 
+// متغير عالمي لمعرفة هوية البائع الحالي
 const CURRENT_SELLER_ID = localStorage.getItem('seller_doc_id');
 const CURRENT_SELLER_NAME = localStorage.getItem('seller_name');
 
-// 4. استقبال الإعدادات من لوحة التحكم
-db.collection("app_config").doc("ultimate_v5").onSnapshot((doc) => {
-    if (doc.exists) {
-        const s = doc.data();
-        if (s.devPhone) {
-            let devBtn = document.getElementById('dev-whatsapp-btn');
-            if(!devBtn) {
-                const footer = document.querySelector('.app-footer');
-                if(footer) footer.insertAdjacentHTML('beforeend', `<a id="dev-whatsapp-btn" target="_blank" class="dev-contact-btn" style="display:none;"><i class="fa-brands fa-whatsapp"></i> تواصل مع المطور</a>`);
-                devBtn = document.getElementById('dev-whatsapp-btn');
-            }
-            if(devBtn) {
-                const cleanPhone = String(s.devPhone).replace(/\s+/g, '').replace('+', '');
-                devBtn.href = "https://wa.me/" + cleanPhone;
-                devBtn.removeAttribute('style'); 
-                devBtn.style.display = "inline-flex"; 
-            }
-        }
 
-        if(s.fontType) document.body.style.fontFamily = s.fontType;
-        if(s.searchPlaceholder) { const el = document.getElementById('main-search'); if(el) el.placeholder = s.searchPlaceholder; }
-        if(s.devName) { const el = document.querySelector('.dev-name'); if(el) el.textContent = s.devName; window.officialDevName = s.devName; }
-        if(s.searchBtnBg) document.documentElement.style.setProperty('--main', s.searchBtnBg);
-        if(s.titleColor) document.documentElement.style.setProperty('--title-color', s.titleColor);
-        
-        const logo = document.getElementById('main-logo');
-        if(logo) {
-            if(s.logoUrl) logo.src = s.logoUrl;
-            logo.style.animation = (s.logoEffect === 'pulse') ? 'logoPulse 2s infinite' : (s.logoEffect === 'float') ? 'logoFloat 3s infinite' : 'none';
-        }
-        
-        currentEffect = s.cardEffect || 'slideInUp';
-        currentSpeed = s.animSpeed || '0.5';
+ // 4. استقبال الإعدادات من لوحة التحكم
+      db.collection("app_config").doc("ultimate_v5").onSnapshot((doc) => {
+        if (doc.exists) {
+            const s = doc.data();
+            
+            // زر الواتساب للمطور
+if (s.devPhone) {
+    let devBtn = document.getElementById('dev-whatsapp-btn');
+    if(!devBtn) {
+        const footer = document.querySelector('.app-footer');
+        // إنشاء الزر بالتصميم الجديد إذا لم يكن موجوداً
+        if(footer) footer.insertAdjacentHTML('beforeend', `<a id="dev-whatsapp-btn" target="_blank" class="dev-contact-btn" style="display:none;"><i class="fa-brands fa-whatsapp"></i> تواصل مع المطور</a>`);
+        devBtn = document.getElementById('dev-whatsapp-btn');
     }
-});
+    if(devBtn) {
+        const cleanPhone = String(s.devPhone).replace(/\s+/g, '').replace('+', '');
+        devBtn.href = "https://wa.me/" + cleanPhone;
+        // إزالة أي ستايل قديم معارض
+        devBtn.removeAttribute('style'); 
+        // جعله يظهر بالشكل الصحيح
+        devBtn.style.display = "inline-flex"; 
+    }
+}
 
-// دالة جلب البيانات (محدثة)
+            // تطبيق التنسيقات
+            if(s.fontType) document.body.style.fontFamily = s.fontType;
+            if(s.searchPlaceholder) { const el = document.getElementById('main-search'); if(el) el.placeholder = s.searchPlaceholder; }
+            if(s.devName) { const el = document.querySelector('.dev-name'); if(el) el.textContent = s.devName; window.officialDevName = s.devName; }
+            if(s.searchBtnBg) document.documentElement.style.setProperty('--main', s.searchBtnBg);
+            if(s.titleColor) document.documentElement.style.setProperty('--title-color', s.titleColor);
+            
+            // حركة اللوجو
+            const logo = document.getElementById('main-logo');
+            if(logo) {
+                if(s.logoUrl) logo.src = s.logoUrl;
+                logo.style.animation = (s.logoEffect === 'pulse') ? 'logoPulse 2s infinite' : (s.logoEffect === 'float') ? 'logoFloat 3s infinite' : 'none';
+            }
+            
+            currentEffect = s.cardEffect || 'slideInUp';
+            currentSpeed = s.animSpeed || '0.5';
+        }
+      });
+
+      //  دالة جلب البيانات (محدثة)
 async function loadProducts() {
     console.log("⚡ جاري استعادة المنتجات من الذاكرة المحلية...");
+    
     try {
+        // 1. جلب البيانات من الكاش المحلي فوراً (سرعة فائقة)
         const cachedData = await localforage.getItem(CACHE_KEY);
         const localUpdateTime = await localforage.getItem(CACHE_TIME_KEY) || 0;
 
         if (cachedData && cachedData.length > 0) {
             products = Object.freeze(cachedData.map(Object.freeze));
-            renderCategories(); 
+            renderCategories(); // ارسم الأقسام فوراً
             console.log("✅ تم عرض المنتجات من الكاش");
         }
 
+        // 2. التحقق من السيرفر في الخلفية (بدون إزعاج المستخدم)
+        // نستخدم Metadata لتقليل استهلاك الـ Quota (قراءة واحدة فقط)
         const metaDoc = await db.collection("app_config").doc("metadata").get();
         const serverUpdateTime = metaDoc.exists ? metaDoc.data().last_update_time : 0;
 
@@ -168,18 +195,21 @@ async function loadProducts() {
             const snapshot = await db.collection("products").get();
             const rawProducts = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
             
+            // تحديث الكاش
             await localforage.setItem(CACHE_KEY, rawProducts);
             await localforage.setItem(CACHE_TIME_KEY, serverUpdateTime);
             
             products = Object.freeze(rawProducts.map(Object.freeze));
-            renderCategories(); 
+            renderCategories(); // تحديث القائمة بالبيانات الجديدة
         }
     } catch (error) {
         console.warn("⚠️ فشل الاتصال بالسيرفر، التطبيق يعمل في وضع الأوفلاين");
     }
 }
       
-// 1. دالة رسم الأقسام الذكية
+// =======================================================
+// 🧠 1. دالة رسم الأقسام الذكية (نظام متداخل احترافي 3 مستويات)
+// =======================================================
 function renderCategories() {
     const menu = document.getElementById('cat-drop-menu');
     if(!menu) return;
@@ -201,26 +231,30 @@ function renderCategories() {
         return "fa-box-open"; 
     };
 
+    // 💡 الحل الاحترافي: خريطة الرفايع (كل قسم له الكلمات الدلالية والماركات الخاصة به فقط)
     const refayeMap = {
-        "دفايات":["زيت", "هالوجين", "سيراميك", "كوارتز", "تورنيدو"],
-        "مراوح":["سقف", "استاند", "حائط", "مكتب", "بوكس", "360"],
-        "مكنسة":["توشيبا", "هوفر", "هيتاشي", "تورنيدو"],
-        "خلاط":["تورنيدو"],
-        "محضر":[ "محضرة", "مفرمة", "كبة", "عجان", "مضرب" ,"محضرة قهوة تركي" ,"ماكينة إسبريسو" ,"محضرة قهوة أمريكان"],
+    "دفايات": ["زيت", "هالوجين", "سيراميك", "كوارتز", "تورنيدو"],
+        "مراوح": ["سقف", "استاند", "حائط", "مكتب", "بوكس", "360"],
+    "مكنسة": ["توشيبا", "هوفر", "هيتاشي", "تورنيدو"],
+  "خلاط": ["تورنيدو"],
+ "محضر": [ "محضرة", "مفرمة", "كبة", "عجان", "مضرب" ,"محضرة قهوة تركي" ,"ماكينة إسبريسو" ,"محضرة قهوة أمريكان"],
         "مكواه": ["استاند" ,"بخار"],
-        "شفاط":["توشيبا", "تورنيدو", "مطبخ", "حمام", "مسطح", "هرمي"],
-        "اير فراير":["تورنيدو", "شارب"],
-        "هاند بلندر":["تورنيدو", "شارب"]
+        "شفاط": ["توشيبا", "تورنيدو", "مطبخ", "حمام", "مسطح", "هرمي"],
+  "اير فراير": ["تورنيدو", "شارب"],
+  "هاند بلندر": ["تورنيدو", "شارب"]
     };
 
+    // استخراج أسماء الرفايع تلقائياً من الخريطة
     const refayeKeys = Object.keys(refayeMap); 
-    const uniqueCats =[...new Set(products.map(p => p.category).filter(c => c && c.trim() !== ''))];
+
+    const uniqueCats = [...new Set(products.map(p => p.category).filter(c => c && c.trim() !== ''))];
     
     let normalCatsHtml = "";
     let refayeCategories = new Set();
     let hasWashingMachines = false;
     let hasWaterHeaters = false;
 
+    // 1. فرز الأقسام
     uniqueCats.forEach((cat) => {
         const isRefaye = refayeKeys.some(r => cat.includes(r));
         const isWashingMachine = cat.includes("غسالة") || cat.includes("غسالات");
@@ -233,9 +267,12 @@ function renderCategories() {
         } else if (isRefaye) {
             refayeCategories.add(cat);
         } else {
+            // الأقسام العادية الكبيرة (شاشات، تكييفات...)
             const iconClass = getIcon(cat);
             const menuId = `sub-menu-normal-${cat.replace(/\s+/g, '-')}`;
-            const generalBrands =["شارب", "توشيبا", "تورنيدو", "هوفر", "سوني", "لاجيرمانيا", "كاندي", "هيتاشي", "tcl", "تي سي إل" ,"هيلر"];
+            
+            // للأقسام العادية سنعتمد على ماركات عامة
+            const generalBrands = ["شارب", "توشيبا", "تورنيدو", "هوفر", "سوني", "لاجيرمانيا", "كاندي", "هيتاشي", "tcl", "تي سي إل" ,"هيلر"];
             const keywordsInCat = new Set();
             
             products.filter(p => p.category === cat).forEach(p => {
@@ -247,24 +284,27 @@ function renderCategories() {
         }
     });
 
+    // 2. بناء قسم الغسالات (ثابت)
     let washingHtml = "";
     if (hasWashingMachines) {
-        washingHtml = buildMenuRow("الغسالات (ملابس وأطباق)", "fa-jug-detergent", "menu-washing-main",[
+        washingHtml = buildMenuRow("الغسالات (ملابس وأطباق)", "fa-jug-detergent", "menu-washing-main", [
             { text: "تحميل علوي", val: "فوق", icon: "fa-arrow-up" },
             { text: "تحميل أمامي", val: "فول", icon: "fa-arrow-right" },
-            { text: "نصف اوتوماتيك", val: "هاف", icon: "fa-arrow-right" },           
+           { text: "نصف اوتوماتيك", val: "هاف", icon: "fa-arrow-right" },           
             { text: "غسالات أطباق", val: "اطباق", icon: "fa-sink" }
         ], 'washing_all', 'washing', true);
     }
 
+    // 3. بناء قسم السخانات (ثابت)
     let heatersHtml = "";
     if (hasWaterHeaters) {
-        heatersHtml = buildMenuRow("سخانات المياه", "fa-fire-flame-simple", "menu-heaters-main",[
+        heatersHtml = buildMenuRow("سخانات المياه", "fa-fire-flame-simple", "menu-heaters-main", [
             { text: "سخان غاز", val: "غاز", icon: "fa-fire" },
             { text: "سخان كهرباء", val: "كهرباء", icon: "fa-bolt" }
         ], 'heaters_all', 'heaters', true);
     }
 
+    // 4. بناء قسم الرفايع الذكي المتداخل
     let refayeHtml = "";
     if (refayeCategories.size > 0) {
         let refayeItemsHtml = "";
@@ -273,15 +313,18 @@ function renderCategories() {
             const menuId = `sub-refaye-${refCat.replace(/\s+/g, '-')}`;
             const availableBrands = new Set();
             
-            let specificKeywords =[];
+            // 💡 تحديد الكلمات الدلالية الخاصة بهذا القسم المخصص فقط
+            let specificKeywords = [];
             for (let key in refayeMap) {
                 if (refCat.includes(key)) {
                     specificKeywords = [...new Set([...specificKeywords, ...refayeMap[key]])];
                 }
             }
             
+            // إذا لم نجد تخصيص، نضع ماركات عامة كبديل
             if(specificKeywords.length === 0) specificKeywords = ["توشيبا", "تورنيدو", "هوفر"];
 
+            // فلترة المنتجات بناءً على الكلمات المخصصة فقط
             products.filter(p => p.category === refCat).forEach(p => {
                 specificKeywords.forEach(k => { 
                     if (p.name && p.name.includes(k)) availableBrands.add(k); 
@@ -306,9 +349,10 @@ function renderCategories() {
         `;
     }
 
+    // دمج الجميع
     menu.innerHTML = washingHtml + heatersHtml + normalCatsHtml + refayeHtml;
 }
-
+// دالة مساعدة لبناء صفوف القائمة بدقة
 function buildMenuRow(title, icon, menuId, subItems, mainAction, subAction, isCustomObjects = false, parentCat = null) {
     let subHtml = "";
     if (subItems.length > 0) {
@@ -338,18 +382,25 @@ function buildMenuRow(title, icon, menuId, subItems, mainAction, subAction, isCu
     `;
 }
 
-// 2. دالة فتح وإغلاق الأقسام
+// ==================================
+// 🧠 2. دالة فتح وإغلاق الأقسام (نظام Accordion الذكي للمستويات)
+// ===========================
 window.toggleSmartSubMenu = function(event, menuId, arrowEl) {
-    event.stopPropagation();
+    event.stopPropagation(); // منع تداخل النقرات
+    
     const targetMenu = document.getElementById(menuId);
     if (!targetMenu) return;
 
+    // 1. حفظ الحالة الحالية للقسم المستهدف
     const isCurrentlyOpen = targetMenu.classList.contains('open');
+
+    // 2. إغلاق القوائم المفتوحة (التي ليست آباء للقسم الحالي)
     const allOpenMenus = document.querySelectorAll('.sub-menu-container.open');
     
     allOpenMenus.forEach(menu => {
         if (menu !== targetMenu && !menu.contains(targetMenu)) {
             menu.classList.remove('open');
+            
             if (menu.previousElementSibling) {
                 const relatedArrow = menu.previousElementSibling.querySelector('.cat-toggle-arrow');
                 if (relatedArrow) {
@@ -359,6 +410,7 @@ window.toggleSmartSubMenu = function(event, menuId, arrowEl) {
         }
     });
 
+    // 3. التبديل (Toggle) للقسم المستهدف فقط
     if (!isCurrentlyOpen) {
         targetMenu.classList.add('open');
         arrowEl.classList.add('open-arrow');
@@ -368,7 +420,9 @@ window.toggleSmartSubMenu = function(event, menuId, arrowEl) {
     }
 };
 
-// 3. دالة الفلترة الذكية
+// ==================================
+// 🧠 3. دالة الفلترة الذكية (محدثة لدعم السخانات)
+// ===================================
 window.filterBySmart = function(filterType, filterValue, el) {
     document.querySelectorAll('.cat-main-row, .cat-drop-item').forEach(item => item.classList.remove('active'));
     if(el.classList.contains('cat-main-text')) el.parentElement.classList.add('active');
@@ -386,9 +440,13 @@ window.filterBySmart = function(filterType, filterValue, el) {
     if(tourBtn) tourBtn.classList.add('tour-hidden');
     res.innerHTML = '<div style="text-align:center; width:100%; padding:60px;"><i class="fa-solid fa-spinner fa-spin fa-2x" style="color:var(--main)"></i><br><br><b style="color:#777;">جاري ترتيب المنتجات...</b></div>';
 
-    setTimeout(() => {
+    const refayeList = ["مكنسة", "خلاط", "محضر طعام", "مكواه", "مكواة", "شفاط", "اير فراير", "قلاية", "مفرمة", "كبة", "عجان", "مضرب", "هاند بلندر", "مروحة", "مراوح", "دفاية"];
+
+setTimeout(() => {
         let filtered = [];
-        const refayeList =["مكنسة", "خلاط", "محضر", "مكواه", "مكواة", "شفاط", "اير فراير", "قلاية", "مفرمة", "كبة", "عجان", "مضرب", "هاند بلندر", "مروحة", "مراوح", "دفاية"];
+        
+        // جلب قائمة الرفايع المعتمدة لدينا لضمان التطابق
+        const refayeList = ["مكنسة", "خلاط", "محضر", "مكواه", "مكواة", "شفاط", "اير فراير", "قلاية", "مفرمة", "كبة", "عجان", "مضرب", "هاند بلندر", "مروحة", "مراوح", "دفاية"];
 
         if (filterType === 'refaye_all') {
             if(btnText) btnText.innerHTML = '<i class="fa-solid fa-kitchen-set"></i> كل الرفايع';
@@ -444,17 +502,23 @@ window.filterBySmart = function(filterType, filterValue, el) {
 
         if(typeof displayResults === 'function') displayResults(filtered);
     }, 150);
-};
+    };
 
-// الفتح والإغلاق عند الضغط على الزر
+// ==================================
+// 🟢 الدوال الخاصة بفتح وإغلاق القائمة (مفصولين في الخارج)
+// ====================================
+
+// دالة الفتح والإغلاق عند الضغط على الزر
 window.toggleCatDropdown = function(event) {
-    if(event) event.stopPropagation(); 
+    if(event) event.stopPropagation(); // منع تداخل النقرات
     
     const menu = document.getElementById("cat-drop-menu");
     const arrow = document.getElementById("cat-main-arrow");
     
     if(menu) {
         menu.classList.toggle("show-menu");
+        
+        // تأثير دوران السهم
         if(arrow) {
             if(menu.classList.contains("show-menu")) {
                 arrow.style.transform = "rotate(180deg)";
@@ -468,6 +532,7 @@ window.toggleCatDropdown = function(event) {
     }
 };
 
+// إغلاق القائمة تلقائياً عند الضغط في أي مكان فارغ في الشاشة
 document.addEventListener('click', function(event) {
     const dropdownContainer = document.querySelector('.categories-dropdown');
     const menu = document.getElementById("cat-drop-menu");
@@ -483,36 +548,36 @@ document.addEventListener('click', function(event) {
         }
     }
 });
-
-// البحث
-const inp = document.getElementById('main-search');
-const box = document.getElementById('sug-box');
-function debounce(func, wait) {
+      //  البحث ورسم الكروت 
+      const inp = document.getElementById('main-search');
+      const box = document.getElementById('sug-box');
+      function debounce(func, wait) {
   let t;
   return function (...args) {
     clearTimeout(t);
     t = setTimeout(() => func.apply(this, args), wait);
   };
 }
-inp.oninput = debounce(function() {
-    const v = this.value.trim().toLowerCase();
-    box.innerHTML = '';
-    if(!v) { box.style.display = 'none'; return; }
-    const m = products.filter(p => (p.name && p.name.toLowerCase().includes(v)) || (p.id && p.id.toLowerCase().includes(v))).slice(0,5);
-    if(m.length) {
-        box.style.display = 'block';
-        m.forEach(p => {
-        const d = document.createElement('div');
-        d.className = 'sug-item';
-        d.textContent = p.name;
-        d.onclick = () => { inp.value = p.id; box.style.display = 'none'; doSearch(); };
-        box.appendChild(d);
-        });
-    }
+      inp.oninput = debounce(function() {
+        const v = this.value.trim().toLowerCase();
+        box.innerHTML = '';
+        if(!v) { box.style.display = 'none'; return; }
+        const m = products.filter(p => (p.name && p.name.toLowerCase().includes(v)) || (p.id && p.id.toLowerCase().includes(v))).slice(0,5);
+        if(m.length) {
+          box.style.display = 'block';
+          m.forEach(p => {
+            const d = document.createElement('div');
+            d.className = 'sug-item';
+            d.textContent = p.name;
+            d.onclick = () => { inp.value = p.id; box.style.display = 'none'; doSearch(); };
+            box.appendChild(d);
+          });
+        }
 }, 250);
       
-inp.onkeypress = (e) => { if(e.key === 'Enter') { box.style.display = 'none'; doSearch(); inp.blur(); } };
+      inp.onkeypress = (e) => { if(e.key === 'Enter') { box.style.display = 'none'; doSearch(); inp.blur(); } };
 
+// البحث (تم التعديل: إزالة القص لكي يعمل نظام Load More على كافة النتائج)
 function doSearch() {
     const box = document.getElementById('sug-box');
     const tourBtn = document.getElementById('home-tour-btn'); 
@@ -526,6 +591,7 @@ function doSearch() {
     const res = document.getElementById('results-container');
     res.innerHTML = '<div style="text-align:center; width:100%; padding:40px;"><i class="fa-solid fa-spinner fa-spin fa-2x" style="color:var(--main)"></i></div>';
             
+    // جلب كل النتائج بدون slice ليعمل نظام عرض المزيد بكفاءة
     const matches = products.filter(p => 
         (p.id && p.id.toLowerCase().includes(q)) || 
         (p.name && p.name.toLowerCase().includes(q)) ||
@@ -544,14 +610,19 @@ function doSearch() {
     inp.blur();      
 }
 
+// ==========================================
+// المتغيرات العامة لنظام عرض المزيد (Pagination)
+// ==========================================
 window.currentFilteredProducts =[];
 window.currentDisplayCount = 0;
 const PRODUCTS_PER_PAGE = 10;
 
+// 🧠 دالة عرض النتائج المحدثة لدعم (Load More)
 function displayResults(matches, append = false) {
     const res = document.getElementById('results-container');
     const loadMoreBtn = document.getElementById('load-more-wrapper');
     
+    // إذا لم يكن استكمالاً (بحث جديد أو فلتر جديد) قم بإعادة التعيين
     if (!append) {
         res.innerHTML = '';
         window.currentFilteredProducts = matches;
@@ -569,6 +640,7 @@ function displayResults(matches, append = false) {
         return;
     }
 
+    // اقتصاص الـ 10 منتجات التالية فقط
     const toShow = window.currentFilteredProducts.slice(
         window.currentDisplayCount, 
         window.currentDisplayCount + PRODUCTS_PER_PAGE
@@ -577,19 +649,23 @@ function displayResults(matches, append = false) {
     const fragment = document.createDocumentFragment();
 
     toShow.forEach((p, index) => {
+        // نمرر الـ index الصحيح لضمان تأثيرات الحركة (Animation Delay)
         renderProductCard(p, fragment, window.currentDisplayCount + index);
     });
     
     res.appendChild(fragment);
     
+    // تحديث العداد
     window.currentDisplayCount += toShow.length;
 
+    // إظهار أو إخفاء زر "عرض المزيد"
     if (window.currentDisplayCount < window.currentFilteredProducts.length) {
         if (loadMoreBtn) loadMoreBtn.style.display = 'block';
     } else {
         if (loadMoreBtn) loadMoreBtn.style.display = 'none';
     }
 
+    // التمرير السلس للنتائج (فقط في البحث/الفلتر الجديد، وليس عند ضغط عرض المزيد)
     if (!append) {
         setTimeout(() => {
             const headerOffset = 30; 
@@ -600,14 +676,18 @@ function displayResults(matches, append = false) {
     }
 }
 
+// دالة الضغط على زر عرض المزيد
 window.loadMoreProducts = function() {
     const btn = document.querySelector('.btn-load-more');
     if(btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> جاري التحميل...';
     
+    // محاكاة تأخير بسيط لإعطاء إحساس بالتحميل ثم عرض العناصر
     setTimeout(() => {
         displayResults(window.currentFilteredProducts, true);
+        
+        // إعادة نص الزر لحالته الأصلية بعد انتهاء التحميل
         if(btn) btn.innerHTML = '<i class="fa-solid fa-rotate-right"></i> عرض المزيد';
-    }, 400); 
+    }, 400); // 400 مللي ثانية تعطي تأثيراً بصرياً مريحاً للعين
 };
 
 function renderProductCard(p, container, index) {
@@ -624,15 +704,21 @@ function renderProductCard(p, container, index) {
     card.style.animation = `${currentEffect} ${currentSpeed}s ease forwards`;
     card.style.animationDelay = `${index * 0.1}s`;
 
+    // ========================================================
+    // 🧠 المترجم الذكي: تجميع العناوين كنظام كروت ونقاط (Groups & Bullets)
+    // ========================================================
     let finalSpecsHtml = '';
 
     if (p.details) {
         const lines = p.details.split('\n');
-        let currentHeading = 'أهم المواصفات'; 
+        
+        let currentHeading = 'أهم المواصفات'; // عنوان افتراضي لو لم يكتب البائع عنوان
         let currentPoints =[];
 
+        // دالة مساعدة لرسم الكارت الواحد (عنوان + نقاط)
         const buildGroupHtml = (heading, points) => {
-            if (points.length === 0) return ''; 
+            if (points.length === 0) return ''; // لا ترسم كارت فارغ أبداً
+            
             const pointsHtml = points.map(pt => `
                 <li><i class="fa-solid fa-check bullet-icon"></i> <span>${pt}</span></li>
             `).join('');
@@ -650,12 +736,16 @@ function renderProductCard(p, container, index) {
         };
 
         lines.forEach(line => {
-            let cleanLine = line.replace(/<\/?(?:div|p|br|table|tr|td)[^>]*>/gi, '') 
-                                .trim()
-                                .replace(/^[-*•>✓✔]\s*/, '');
+            // 1. تنظيف السطر من مسافات البداية والنهاية ورموز القوائم العشوائية
+let cleanLine = line.replace(/<\/?(?:div|p|br|table|tr|td)[^>]*>/gi, '') 
+                    .trim()
+                    .replace(/^[-*•>✓✔]\s*/, '');
 
+            // 2. الفلترة الصارمة (تجاهل السطر إذا لم يكن يحتوي على حرف أو رقم)
+            // هذا يمنع السطور الفارغة أو السطور التي تحتوي فقط على مسافات أو رموز
             if (!/[a-zA-Z0-9\u0600-\u06FF]/.test(cleanLine)) return;
 
+            // 3. هل السطر عبارة عن عنوان رئيسي؟ (ينتهي بنقطتين أو بين أقواس مربعة)
             let isHeading = false;
             if (cleanLine.endsWith(':') || cleanLine.endsWith('：')) {
                 isHeading = true;
@@ -666,12 +756,15 @@ function renderProductCard(p, container, index) {
             }
 
             if (isHeading) {
+                // إذا وجدنا عنوان جديد، نقوم أولاً برسم العنوان القديم (لو كان تحته نقاط)
                 if (currentPoints.length > 0) {
                     finalSpecsHtml += buildGroupHtml(currentHeading, currentPoints);
-                    currentPoints =[]; 
+                    currentPoints =[]; // تفريغ النقاط للقسم الجديد
                 }
-                currentHeading = cleanLine; 
+                currentHeading = cleanLine; // تعيين العنوان الجديد
             } else {
+                // السطر عبارة عن نقطة فرعية
+                // تنسيق ذكي للنقاط المزدوجة (مفتاح: قيمة) لتلوين المفتاح
                 if (cleanLine.includes(':')) {
                     const parts = cleanLine.split(':');
                     const key = parts[0].trim();
@@ -683,16 +776,18 @@ function renderProductCard(p, container, index) {
                     const val = parts.slice(1).join(' - ').trim();
                     currentPoints.push(`<span class="spec-key">${key} -</span> ${val}`);
                 } else {
-                    currentPoints.push(cleanLine);
+                    currentPoints.push(cleanLine); // نقطة عادية
                 }
             }
         });
 
+        // 4. رسم آخر مجموعة تبقت في الذاكرة بعد انتهاء اللوب
         if (currentPoints.length > 0) {
             finalSpecsHtml += buildGroupHtml(currentHeading, currentPoints);
         }
     }
 
+    // إذا لم تنجح الفلترة في إيجاد أي تفاصيل صالحة
     if (finalSpecsHtml === '') {
         finalSpecsHtml = `
             <div class="spec-group-card">
@@ -702,6 +797,7 @@ function renderProductCard(p, container, index) {
                 </ul>
             </div>`;
     }
+    // ========================================================
 
     card.innerHTML = `
         <div class="main-display skeleton" id="display-${p.id}">
@@ -710,114 +806,150 @@ function renderProductCard(p, container, index) {
         </div>
         <div id="thumbs-${p.id}" class="thumb-slider">${thumbHtml}${videoBtn}</div>
         <h3 style="text-align:center; margin:10px 0;">${p.name || 'بدون اسم'}</h3>
-        <div class="modern-color-wrapper" id="color-wrap-${p.id}">
-            ${(p.colors ||[]).map((c, i) => `
-                <div class="modern-swatch ${i === 0 ? 'active' : ''}" 
-                     style="background-color: ${c.code};" 
-                     data-tooltip="${c.name}" 
-                     onclick="handleModernColorClick('${p.id}', '${c.image}', this)">
-                </div>
-            `).join('')}
+        <!-- نظام الألوان الجديد -->
+<div class="modern-color-wrapper" id="color-wrap-${p.id}">
+    ${(p.colors ||[]).map((c, i) => `
+        <div class="modern-swatch ${i === 0 ? 'active' : ''}" 
+             style="background-color: ${c.code};" 
+             data-tooltip="${c.name}" 
+             onclick="handleModernColorClick('${p.id}', '${c.image}', this)">
         </div>
+    `).join('')}
+</div>
+        
+        <!-- حاوية المواصفات الذكية -->
         <div class="details-section" id="det-${p.id}">
             <div class="pro-details-container" style="padding:15px 10px;">
                 ${finalSpecsHtml}
             </div>
         </div>
+
         <div style="text-align:center; color:var(--main); font-size:1.5rem; font-weight:bold; margin-bottom:10px;">${formatPriceForDisplay(p.price)}</div>
-        <div class="card-footer-actions">
-            <button style="grid-column: span 2; background: linear-gradient(135deg, #1a9ae8, #0b5099); color: #fff !important; border: none; padding: 10px 12px; border-radius: 35px; font-size 18px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 15px rgba(0, 115, 185, 0.4); border:1px solid #ddd; font-family: 'Cairo', sans-serif;" onclick="toggleD('${p.id}', this)">"المواصفات الفنية"</button>
-            <button class="wa-btn" onclick="sendWhatsApp('${p.id}')" style="padding:10px; background:linear-gradient(135deg, #25D366, #128C7E); color:#fff; border:none; cursor:pointer; border-radius:35px; box-shadow: 0 4px 10px rgba(37, 211, 102, 0.3); display: flex; align-items: center; justify-content: center; gap: 5px; transition: transform 0.2s; font-family: 'Cairo', sans-serif;"><i class="fab fa-whatsapp" style="font-size:16px;"></i> إرسال للعميل</button>
+        
+  <div class="card-footer-actions">
+ <button style="grid-column: span 2;
+  background: linear-gradient(135deg, #1a9ae8, #0b5099);
+  color: #fff !important;
+  border: none;
+  padding: 10px 12px;
+  border-radius: 35px;
+  font-size 18px;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(0, 115, 185, 0.4);
+  border:1px solid #ddd;
+  font-family: 'Cairo', sans-serif;
+  cursor:pointer;
+  " onclick="toggleD('${p.id}', this)">"المواصفات الفنية"</button>
+  
+            <button class="wa-btn" onclick="sendWhatsApp('${p.id}')" style="padding:10px; background:linear-gradient(135deg, #25D366, #128C7E); color:#fff; border:none; cursor:pointer; border-radius:35px; box-shadow: 0 4px 10px rgba(37, 211, 102, 0.3); display: flex; align-items: center; justify-content: center; gap: 5px; transition: transform 0.2s;
+            font-family: 'Cairo', sans-serif;">
+            <i class="fab fa-whatsapp" style="font-size:16px;"></i> إرسال للعميل</button>
+            
             <button style="padding:10px; background:#6f42c1; color:#fff; border:none; cursor:pointer; border-radius:35px; font-family: 'Cairo', sans-serif; font-size 16px;" onclick="openCustomerModal('${safeName}')">👤 تسجيل عميل</button>
+          
+  <!-- أزرار الذكاء الاصطناعي -->
             <div class="ai-btn-group">
                 <button style="padding:10px; background: linear-gradient(135deg, #FFD700, #F59E0B); color:#000; border:none; cursor:pointer; border-radius: 35px; font-size: 16px; display: flex; align-items: center; justify-content: center; gap: 5px; font-family: 'Cairo', sans-serif;" onclick="aiPersuadeCustomer('${p.id}')">✨ اقنع العميل</button>
-                <button style="padding:10px; background: linear-gradient(135deg, #3B82F6, #2563EB); color:#fff; border:none; cursor:pointer; border-radius: 35px;  font-size: 16px; display: flex; align-items: center; justify-content: center; gap: 5px; font-family: 'Cairo', sans-serif;" id="btn-compare-${p.id}" onclick="aiCompareMenu('${p.id}')">⚖️ قارن منتجين</button>
+                
+<button style="padding:10px; background: linear-gradient(135deg, #3B82F6, #2563EB); color:#fff; border:none; cursor:pointer; border-radius: 35px;  font-size: 16px; display: flex; align-items: center; justify-content: center; gap: 5px; font-family: 'Cairo', sans-serif;" id="btn-compare-${p.id}" onclick="aiCompareMenu('${p.id}')">⚖️ قارن منتجين</button>
             </div>
         </div>`;
         
     container.appendChild(card); 
 }
 
-window.updateDisplay = function(pid, src, idx, thumb) {
-    const display = document.getElementById(`display-${pid}`);
-    if(display) {
-        display.classList.add('skeleton');
-        display.innerHTML = `<img src="${src}" style="opacity:0; transition:opacity 0.4s" onload="this.style.opacity='1'; this.parentElement.classList.remove('skeleton')" onclick="openViewerFromSrc('${pid}', this.src)"/>`;
-    }
-    if(thumb) {
-        thumb.parentElement.querySelectorAll('.thumb-item').forEach(t => t.classList.remove('active'));
-        thumb.classList.add('active');
-    }
-};
+      //  وظائف العرض 
+      window.updateDisplay = function(pid, src, idx, thumb) {
+        const display = document.getElementById(`display-${pid}`);
+        if(display) {
+            display.classList.add('skeleton');
+            display.innerHTML = `<img src="${src}" style="opacity:0; transition:opacity 0.4s" onload="this.style.opacity='1'; this.parentElement.classList.remove('skeleton')" onclick="openViewerFromSrc('${pid}', this.src)"/>`;
+        }
+        if(thumb) {
+            thumb.parentElement.querySelectorAll('.thumb-item').forEach(t => t.classList.remove('active'));
+            thumb.classList.add('active');
+        }
+      };
 
-window.updateDisplayVideo = function(pid, vid, thumb) {
-    let videoHtml = '';
-    if (vid.includes('youtube.com') || vid.includes('youtu.be')) {
-        let videoId = vid.includes('v=') ? vid.split('v=')[1].split('&')[0] : vid.split('/').pop();
-        videoHtml = `<div class="video-container"><iframe src="https://www.youtube.com/embed/${videoId}?rel=0&autoplay=1" allowfullscreen></iframe></div>`;
-    } else {
-        videoHtml = `<div class="video-container"><video src="${vid}" controls autoplay playsinline></video></div>`;
-    }
-    const display = document.getElementById(`display-${pid}`);
-    if(display) display.innerHTML = videoHtml;
-    if(thumb) {
-        thumb.parentElement.querySelectorAll('.thumb-item').forEach(t => t.classList.remove('active'));
-        thumb.classList.add('active');
-    }
-};
+      window.updateDisplayVideo = function(pid, vid, thumb) {
+        let videoHtml = '';
+        if (vid.includes('youtube.com') || vid.includes('youtu.be')) {
+            let videoId = vid.includes('v=') ? vid.split('v=')[1].split('&')[0] : vid.split('/').pop();
+            videoHtml = `<div class="video-container"><iframe src="https://www.youtube.com/embed/${videoId}?rel=0&autoplay=1" allowfullscreen></iframe></div>`;
+        } else {
+            videoHtml = `<div class="video-container"><video src="${vid}" controls autoplay playsinline></video></div>`;
+        }
+        const display = document.getElementById(`display-${pid}`);
+        if(display) display.innerHTML = videoHtml;
+        if(thumb) {
+            thumb.parentElement.querySelectorAll('.thumb-item').forEach(t => t.classList.remove('active'));
+            thumb.classList.add('active');
+        }
+      };
 
-window.focusColor = function(pid, src) {
-    window.updateDisplay(pid, src, null, null);
-};
+      window.focusColor = function(pid, src) {
+        window.updateDisplay(pid, src, null, null);
+      };
 
-window.toggleD = function(id, btn) {
-    const el = document.getElementById('det-' + id);
-    if(el) {
-        el.classList.toggle('open');
-        btn.textContent = el.classList.contains('open') ? 'إخفاء' : 'المواصفات الفنية';
-    }
-};
+      window.toggleD = function(id, btn) {
+        const el = document.getElementById('det-' + id);
+        if(el) {
+            el.classList.toggle('open');
+            btn.textContent = el.classList.contains('open') ? 'إخفاء' : 'المواصفات الفنية';
+        }
+      };
 
 // ==================================
-// 🚀 نظام العرض الاحترافي 
+// 🚀 نظام العرض الاحترافي (Pro Viewer JS)
 // ==================================
-let pv_current_images =[];
+
+let pv_current_images = [];
 let pv_current_index = 0;
-let pv_observer = null; 
+let pv_observer = null; // مراقب التمرير
 
+// 1. استخراج معرف اليوتيوب بدقة
 function getYouTubeID(url) {
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
     const match = url.match(regExp);
     return (match && match[2].length === 11) ? match[2] : null;
 }
 
+// 2. تهيئة الهيكل (HTML)
 function initProViewerDOM() {
     if (document.getElementById('pro-viewer')) return;
+
     const html = `
     <div id="pro-viewer" class="pro-viewer-overlay">
         <div class="pv-header">
             <button class="pv-close" onclick="closeProViewer()">&#10005;</button>
             <div class="pv-counter" id="pv-counter">1 / 1</div>
         </div>
+        
         <div class="pv-track-container">
             <div class="pv-track" id="pv-track"></div>
         </div>
+
         <div class="pv-thumbnails" id="pv-thumbs"></div>
     </div>`;
     document.body.insertAdjacentHTML('beforeend', html);
 }
 
+// 3. الدالة الرئيسية لفتح العارض (تم حل مشكلة صور الألوان)
 window.openViewerFromSrc = function(productId, initialSrc) {
-    initProViewerDOM(); 
+    initProViewerDOM(); // التأكد من وجود العناصر
     
+    // إخفاء شريط الإشعارات مؤقتاً
     const notifyBar = document.getElementById('sys-notification-bar');
     if(notifyBar) notifyBar.style.display = 'none';
 
     const product = products.find(p => p.id === productId);
     if (!product) return;
 
+    // 1. إعداد قائمة الصور: جلب الصور الأساسية
     pv_current_images = [...(product.images || [])];
     
+    // 2. 💡 التعديل السحري: إضافة صور الألوان إلى العارض (إذا لم تكن موجودة مسبقاً)
     if (product.colors && product.colors.length > 0) {
         product.colors.forEach(c => {
             if (c.image && c.image.trim() !== "" && !pv_current_images.includes(c.image)) {
@@ -826,11 +958,17 @@ window.openViewerFromSrc = function(productId, initialSrc) {
         });
     }
 
+    // 3. إضافة الفيديو إن وجد
     if (product.video && product.video.trim() !== "") {
         pv_current_images.push({ type: 'video', src: product.video });
     }
 
-    pv_current_index = pv_current_images.findIndex(item => (typeof item === 'string' && item === initialSrc));
+    // 4. تحديد مكان البدء بناءً على الصورة التي ضغط عليها المستخدم
+    pv_current_index = pv_current_images.findIndex(item => 
+        (typeof item === 'string' && item === initialSrc)
+    );
+    
+    // إذا لم يجد الصورة لسبب ما، يبدأ من الأولى
     if (pv_current_index === -1) pv_current_index = 0;
 
     const track = document.getElementById('pv-track');
@@ -838,19 +976,25 @@ window.openViewerFromSrc = function(productId, initialSrc) {
     track.innerHTML = '';
     thumbs.innerHTML = '';
 
+    // بناء المحتوى
     pv_current_images.forEach((media, index) => {
+        // الشريحة الكبيرة
         const slide = document.createElement('div');
         slide.className = 'pv-slide';
         slide.dataset.index = index;
 
         if (typeof media === 'string') {
+            // صورة
             slide.innerHTML = `<img src="${media}" class="pv-media" ondblclick="togglePvZoom(this)" loading="lazy" draggable="false">`;
         } else if (media.type === 'video') {
+            // فيديو
             let videoHTML = '';
             const vidSrc = media.src;
             if (vidSrc.includes('youtube') || vidSrc.includes('youtu.be')) {
                 const vId = getYouTubeID(vidSrc);
-                videoHTML = vId ? `<iframe src="https://www.youtube.com/embed/${vId}?rel=0&modestbranding=1&playsinline=1&enablejsapi=1" allowfullscreen></iframe>` : `<div style="color:white">رابط فيديو غير صحيح</div>`;
+                videoHTML = vId 
+                    ? `<iframe src="https://www.youtube.com/embed/${vId}?rel=0&modestbranding=1&playsinline=1&enablejsapi=1" allowfullscreen></iframe>`
+                    : `<div style="color:white">رابط فيديو غير صحيح</div>`;
             } else {
                 videoHTML = `<video src="${vidSrc}" controls playsinline></video>`;
             }
@@ -858,22 +1002,25 @@ window.openViewerFromSrc = function(productId, initialSrc) {
         }
         track.appendChild(slide);
 
+        // المصغرة
         const thumb = document.createElement('img');
         thumb.className = `pv-thumb ${index === pv_current_index ? 'active' : ''}`;
         if (typeof media === 'string') {
             thumb.src = media;
         } else {
-            thumb.src = 'https://cdn-icons-png.flaticon.com/512/1384/1384060.png'; 
+            thumb.src = 'https://cdn-icons-png.flaticon.com/512/1384/1384060.png'; // أيقونة فيديو
             thumb.style.padding = '12px'; thumb.style.background='#fff';
         }
         thumb.onclick = () => pvScrollTo(index);
         thumbs.appendChild(thumb);
     });
 
+    // عرض النافذة
     const viewer = document.getElementById('pro-viewer');
     viewer.classList.add('active');
     document.body.style.overflow = 'hidden';
 
+    // الانتقال للصورة وتفعيل المراقب
     setTimeout(() => {
         pvScrollTo(pv_current_index);
         setupIntersectionObserver();
@@ -882,23 +1029,32 @@ window.openViewerFromSrc = function(productId, initialSrc) {
     history.pushState({ proViewer: true }, null, "#view");
 };
 
+// 4. دالة الزوم المستقر (بدون اهتزاز)
 window.togglePvZoom = function(img) {
     const slide = img.parentElement;
     const track = document.getElementById('pv-track');
     
     if (slide.classList.contains('zoomed-mode')) {
         slide.classList.remove('zoomed-mode');
-        track.classList.remove('locked'); 
+        track.classList.remove('locked'); // فتح القفل للتنقل
         slide.scrollTop = 0; slide.scrollLeft = 0;
-    } else {
-        track.classList.add('locked'); 
-        slide.classList.add('zoomed-mode'); 
+    } 
+
+    else {
+        track.classList.add('locked'); // قفل التنقل بين الصور
+        slide.classList.add('zoomed-mode'); // تفعيل وضع الزوم
+        
+        // توسيط الصورة المكبرة (تحسين تجربة المستخدم)
         setTimeout(() => {
             slide.scrollLeft = (img.width - slide.clientWidth) / 2;
             slide.scrollTop = (img.height - slide.clientHeight) / 2;
         }, 50);
     }
 };
+
+// =========================================
+// 🌐 نظام المتصفح الداخلي (In-App Browser)
+// =========================================
 
 window.openInAppBrowser = function(url, title = 'عرض الصفحة') {
     const browserOverlay = document.getElementById('in-app-browser');
@@ -907,17 +1063,24 @@ window.openInAppBrowser = function(url, title = 'عرض الصفحة') {
     const extLink = document.getElementById('in-app-external-link');
     const loader = document.getElementById('in-app-loader');
 
+    // تعيين البيانات
     titleEl.innerText = title;
     extLink.href = url;
+    
+    // إظهار شاشة التحميل
     loader.style.display = 'flex';
+    
+    // إخفاء الـ Iframe حتى يتم التحميل لضمان سلاسة العرض
     iframe.style.opacity = '0';
     iframe.src = url;
 
+    // حدث انتهاء تحميل الصفحة داخل الإطار
     iframe.onload = function() {
         loader.style.display = 'none';
         iframe.style.opacity = '1';
     };
 
+    // إظهار المتصفح ومنع التمرير في الخلفية
     browserOverlay.classList.add('active');
     document.body.style.overflow = 'hidden';
 };
@@ -925,21 +1088,31 @@ window.openInAppBrowser = function(url, title = 'عرض الصفحة') {
 window.closeInAppBrowser = function() {
     const browserOverlay = document.getElementById('in-app-browser');
     const iframe = document.getElementById('in-app-iframe');
+
+    // إخفاء المتصفح
     browserOverlay.classList.remove('active');
     document.body.style.overflow = 'auto';
-    setTimeout(() => { iframe.src = ''; }, 400); 
+
+    // مسح الرابط لإيقاف العمليات في الخلفية وتفريغ الذاكرة (RAM)
+    setTimeout(() => {
+        iframe.src = '';
+    }, 400); // الانتظار حتى تنتهي حركة الإغلاق (Animation)
 };
 
+// 5. التمرير إلى صورة محددة
 window.pvScrollTo = function(index) {
     const track = document.getElementById('pv-track');
     const slide = track.children[index];
     if(slide) {
+        // استخدام scrollIntoView لأنه الأدق مع RTL/LTR
         slide.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' });
     }
 };
 
+// 6. مراقب التمرير (لتحديث المصغرات فوراً)
 function setupIntersectionObserver() {
     if (pv_observer) pv_observer.disconnect();
+    
     const track = document.getElementById('pv-track');
     const slides = document.querySelectorAll('.pv-slide');
 
@@ -950,16 +1123,20 @@ function setupIntersectionObserver() {
                 updateThumbsUI(idx);
             }
         });
-    }, { root: track, threshold: 0.5 }); 
+    }, { root: track, threshold: 0.5 }); // التحديث عند ظهور 50% من الصورة
 
     slides.forEach(s => pv_observer.observe(s));
 }
 
+// 7. تحديث واجهة المستخدم (العداد والمصغرات)
 function updateThumbsUI(index) {
     pv_current_index = index;
+    
+    // العداد
     const counter = document.getElementById('pv-counter');
     if(counter) counter.textContent = `${index + 1} / ${pv_current_images.length}`;
     
+    // المصغرات
     document.querySelectorAll('.pv-thumb').forEach((t, i) => {
         if (i === index) {
             t.classList.add('active');
@@ -969,6 +1146,7 @@ function updateThumbsUI(index) {
         }
     });
 
+    // إيقاف الفيديو في الشرائح المخفية
     const track = document.getElementById('pv-track');
     Array.from(track.children).forEach((slide, i) => {
         if (i !== index) {
@@ -980,6 +1158,7 @@ function updateThumbsUI(index) {
     });
 }
 
+// 8. إغلاق العارض
 window.closeProViewer = function() {
     const viewer = document.getElementById('pro-viewer');
     if (!viewer) return;
@@ -989,6 +1168,7 @@ window.closeProViewer = function() {
 
     if (pv_observer) { pv_observer.disconnect(); pv_observer = null; }
 
+    // إيقاف كل شيء
     const track = document.getElementById('pv-track');
     track.querySelectorAll('iframe').forEach(ifr => ifr.src = ifr.src);
     track.querySelectorAll('video').forEach(vid => vid.pause());
@@ -999,6 +1179,7 @@ window.closeProViewer = function() {
     if(window.location.hash === "#view") history.back();
 };
 
+// التعامل مع زر الرجوع في المتصفح
 window.addEventListener('popstate', function(event) {
     const viewer = document.getElementById('pro-viewer');
     if (viewer && viewer.classList.contains('active')) {
@@ -1006,6 +1187,8 @@ window.addEventListener('popstate', function(event) {
     }
 });
 
+
+// 1. جلب المظهر والإعدادات مرة واحدة عند التحميل (لتوفير القراءات)
 db.collection("app_config").doc("ultimate_v5").get().then((doc) => {
     if (doc.exists) {
         const s = doc.data();
@@ -1020,6 +1203,7 @@ db.collection("app_config").doc("ultimate_v5").get().then((doc) => {
     }
 });
 
+// 2أ. مراقبة وضع الصيانة — مستمع مستقل يُشغَّل مرة واحدة فقط
 db.collection("app_config").doc("maintenance_mode").onSnapshot(doc => {
     if(doc.exists) {
         const data = doc.data();
@@ -1034,6 +1218,7 @@ db.collection("app_config").doc("maintenance_mode").onSnapshot(doc => {
     }
 });
 
+// 2ب. مراقبة الإشعارات فقط (التي تحتاج رد فعل فوري)
 db.collection("app_config").doc("notifications").onSnapshot(doc => {
     if(!doc.exists) return;
     const data = doc.data();
@@ -1049,16 +1234,19 @@ db.collection("app_config").doc("notifications").onSnapshot(doc => {
     }
 });
 
-function toggleDarkMode() {
-    document.body.classList.toggle('dark-mode');
-    const isDark = document.body.classList.contains('dark-mode');
-    document.getElementById('dark-mode-toggle').textContent = isDark ? '☀️' : '🌙';
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
-}
-if (localStorage.getItem('theme') === 'dark') { document.body.classList.add('dark-mode'); document.getElementById('dark-mode-toggle').textContent = '☀️'; }
+      //  الواتساب والوضع الليلي
+      function toggleDarkMode() {
+        document.body.classList.toggle('dark-mode');
+        const isDark = document.body.classList.contains('dark-mode');
+        document.getElementById('dark-mode-toggle').textContent = isDark ? '☀️' : '🌙';
+        localStorage.setItem('theme', isDark ? 'dark' : 'light');
+      }
+      if (localStorage.getItem('theme') === 'dark') { document.body.classList.add('dark-mode'); document.getElementById('dark-mode-toggle').textContent = '☀️'; }
       
+// قفل لمنع الضغط المزدوج
 window.isSharingInProgress = false;
 
+// 📱 دالة إرسال البيانات (مع دعم الأندرويد كمتصفح أصلي)
 window.sendWhatsApp = async function(productId) {
     if (window.isSharingInProgress) return;
     window.isSharingInProgress = true;
@@ -1079,12 +1267,13 @@ window.sendWhatsApp = async function(productId) {
     let imageUrl = (p.images && p.images.length > 0 && p.images[0].trim() !== "") ? p.images[0].trim() : null;
     if (imageUrl) imageUrl = imageUrl.replace('http://', 'https://');
 
+    // دالة الطوارئ للنص فقط
     const sendTextOnlyNative = () => {
         window.location.href = `whatsapp://send?text=${encodeURIComponent(textMessage)}`;
         releaseLock();
     };
 
-    if (!imageUrl) {
+ if (!imageUrl) {
         sendTextOnlyNative();
         return;
     }
@@ -1098,6 +1287,7 @@ window.sendWhatsApp = async function(productId) {
         return;
     }
 
+    // --- الكود التالي سيعمل فقط إذا كان المستخدم يفتح التطبيق من متصفح عادي (Chrome/Safari) ---
     try {
         const response = await fetch(imageUrl, { mode: 'cors' });
         if (!response.ok) throw new Error("Fetch failed");
@@ -1116,30 +1306,45 @@ window.sendWhatsApp = async function(productId) {
 
     } catch (error) {
         Swal.close();
-        sendTextOnlyNative(); 
+        sendTextOnlyNative(); // دالة الطوارئ
     }
 };
-
-window.openCustomerModal = function(productName) {
-    document.getElementById('custProduct').value = productName;
-    document.getElementById('customerModal').style.display = 'flex';
-};
-window.closeCustomerModal = function() { document.getElementById('customerModal').style.display = 'none'; };
+      // نظام العملاء
+      window.openCustomerModal = function(productName) {
+          document.getElementById('custProduct').value = productName;
+          document.getElementById('customerModal').style.display = 'flex';
+      };
+      window.closeCustomerModal = function() { document.getElementById('customerModal').style.display = 'none'; };
       
-function getSellerId() { return localStorage.getItem('seller_doc_id'); }
-function getSellerName() { return localStorage.getItem('seller_name'); }
+// ================================
+//  نظام سجل العملاء السحابي (كامل ومصحح)
+// ================================
 
+// 1. دوال مساعدة لجلب بيانات البائع
+function getSellerId() {
+    return localStorage.getItem('seller_doc_id');
+}
+function getSellerName() {
+    return localStorage.getItem('seller_name');
+}
+
+// 2. دالة تشغيل زر العرض (هذه كانت المفقودة أو المعطلة)
 window.toggleHistory = function() {
     const sec = document.getElementById('historySection');
+    
+    // فحص حالة العرض الحالية
     if (sec.style.display === 'none' || sec.style.display === '') {
+        // إظهار القسم
         sec.style.display = 'block';
+        // استدعاء دالة جلب البيانات من السيرفر
         renderHistory();
     } else {
+        // إخفاء القسم
         sec.style.display = 'none';
     }
 };
 
-// ⚠️ تم إصلاح الخطأ البرمجي القاتل هنا (إزالة الأقواس والكلمات المكررة)
+// 3. دالة حفظ العميل (Save Customer) مع المنبه الأصلي للأندرويد
 window.saveCustomerData = async function() {
     if ("Notification" in window && Notification.permission !== "granted") {
         Notification.requestPermission();
@@ -1189,6 +1394,7 @@ window.saveCustomerData = async function() {
 
         const reminderTimestamp = rTime ? new Date(rTime).getTime() : null;
 
+        // 🔥 التعديل هنا: الاحتفاظ بمرجع المستند (docRef) لنقل الـ ID للأندرويد
         const docRef = await db.collection('seller_customers').add({
             sellerId: sellerId,
             sellerName: sellerName,
@@ -1203,9 +1409,11 @@ window.saveCustomerData = async function() {
             isNotified: rTime ? false : true 
         });
 
+// 🔥 استدعاء منبه الأندرويد 
         if (reminderTimestamp) {
             try {
                 if (window.AndroidBridge && typeof window.AndroidBridge.setAlarmDirect === "function") {
+                    // إرسال المتغيرات كنصوص (String) لضمان عدم رفضها من الأندرويد
                     window.AndroidBridge.setAlarmDirect(
                         String(docRef.id), 
                         String(reminderTimestamp), 
@@ -1213,6 +1421,8 @@ window.saveCustomerData = async function() {
                         String(product), 
                         String(phone || "")
                     );
+                } else {
+                    console.log("⚠️ الأندرويد غير متصل");
                 }
             } catch (err) {
                 console.error("Bridge Error:", err);
@@ -1231,137 +1441,148 @@ window.saveCustomerData = async function() {
         console.error("Save Error:", e);
         Swal.fire('فشل الحفظ', 'تأكد من الإنترنت والصلاحيات.\n' + e.message, 'error');
     } finally {
-        if(btn) {
-            btn.innerHTML = originalText;
-            btn.disabled = false;
-        }
+        btn.innerHTML = originalText;
+        btn.disabled = false;
     }
 };
 
-// ================================
-// 🚀 نظام إدارة العملاء الموحد (تم الإصلاح لدعم WebView)
-// ===============================
+// ==========================================
+// 1. نظام الحذف المتعدد (Bulk Delete System)
+// ==========================================
 
+// دخول وضع الحذف (إظهار المربعات)
 window.enterBulkDeleteMode = function() {
-    const table = document.getElementById('customersTable');
     const defaultBar = document.getElementById('defaultActionBtns');
     const bulkBar = document.getElementById('bulkActionBtns');
+    const table = document.getElementById('customersTable');
     
-    if(table) table.classList.add('bulk-active');
     if(defaultBar) defaultBar.style.display = 'none';
     if(bulkBar) bulkBar.style.display = 'flex';
+    if(table) table.classList.add('bulk-active');
 };
 
+// الخروج من وضع الحذف (إخفاء المربعات)
 window.exitBulkDeleteMode = function() {
-    const table = document.getElementById('customersTable');
     const defaultBar = document.getElementById('defaultActionBtns');
     const bulkBar = document.getElementById('bulkActionBtns');
+    const table = document.getElementById('customersTable');
     
-    if(table) table.classList.remove('bulk-active');
     if(defaultBar) defaultBar.style.display = 'block';
     if(bulkBar) bulkBar.style.display = 'none';
+    if(table) table.classList.remove('bulk-active');
     
+    // إلغاء تحديد كل المربعات
     const selectAllBtn = document.getElementById('selectAllCust');
     if(selectAllBtn) selectAllBtn.checked = false;
     document.querySelectorAll('.cust-checkbox').forEach(cb => cb.checked = false);
 };
 
+// تحديد أو إلغاء تحديد الكل
 window.toggleAllCustomers = function(source) {
     const checkboxes = document.querySelectorAll('.cust-checkbox');
     checkboxes.forEach(cb => {
         cb.checked = source.checked;
     });
-    window.updateSelectAllUI();
 };
 
+// تحديث حالة "تحديد الكل" عند ضغط مربعات فردية
 window.updateSelectAllUI = function() {
     const allBoxes = document.querySelectorAll('.cust-checkbox');
-    let checkedCount = 0;
-    allBoxes.forEach(box => { if (box.checked) checkedCount++; });
-    
+    const checkedBoxes = document.querySelectorAll('.cust-checkbox:checked');
     const selectAll = document.getElementById('selectAllCust');
     if(selectAll && allBoxes.length > 0) {
-        selectAll.checked = (allBoxes.length === checkedCount);
+        selectAll.checked = (allBoxes.length === checkedBoxes.length);
     }
 };
 
+// ===================================
+// 1. دالة حذف المربعات المحددة (الحذف المتعدد) - نسخة مستقرة 100%
+// ====================================
 window.deleteSelectedCustomers = async function() {
-    const allBoxes = document.querySelectorAll('.cust-checkbox');
-    let idsToDelete =[];
+    // جلب كافة المربعات المحددة
+    const checkedBoxes = document.querySelectorAll('.cust-checkbox:checked');
     
-    // ⚠️ الطريقة الأكثر توافقاً مع متصفحات الأندرويد الهجين
-    allBoxes.forEach(box => {
-        if(box.checked) idsToDelete.push(box.value);
+    // تحويل العناصر المحددة إلى مصفوفة من المعرفات IDs
+    let idsToDelete = [];
+    checkedBoxes.forEach(function(box) {
+        idsToDelete.push(box.value);
     });
 
+    // إذا لم يتم اختيار أي عميل
     if (idsToDelete.length === 0) {
-        Swal.fire({ icon: 'info', title: 'تنبيه', text: 'يرجى اختيار عميل واحد على الأقل.' });
+        Swal.fire({
+            icon: 'info',
+            title: 'تنبيه',
+            text: 'من فضلك اختر عميل واحد على الأقل لحذفه.',
+            confirmButtonText: 'حسناً',
+            customClass: { popup: 'ai-swal-popup' }
+        });
         return;
     }
 
+    // رسالة التأكيد (بدون رابط الموقع)
     Swal.fire({
-        title: `حذف ${idsToDelete.length} سجل؟`,
-        text: "هل أنت متأكد؟ لن تتمكن من استعادة هذه البيانات!",
+        title: `حذف ${idsToDelete.length} عميل؟`,
+        text: "هل أنت متأكد؟ سيتم حذف العملاء المحددين نهائياً من السيرفر.",
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#ef4444',
         cancelButtonColor: '#6c757d',
-        confirmButtonText: 'نعم، احذف الآن',
-        cancelButtonText: 'إلغاء',
-        customClass: { popup: 'ai-swal-popup' } 
-    }).then(async (result) => {
-        if (result.isConfirmed) {
-            Swal.fire({ title: 'جاري الحذف...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-            
-            try {
-                const batch = db.batch();
-                idsToDelete.forEach(id => {
-                    batch.delete(db.collection('seller_customers').doc(id));
-                    // تغليف في Try-Catch لحماية جافا سكريبت من أي خطأ صامت من الأندرويد
-                    try {
-                        if (window.AndroidBridge && window.AndroidBridge.cancelReminder) {
-                            window.AndroidBridge.cancelReminder(String(id));
-                        }
-                    } catch(err) { console.error("AndroidBridge Error", err); }
-                });
-
-                await batch.commit();
-                Swal.fire({ icon: 'success', title: 'تم الحذف بنجاح', timer: 1500, showConfirmButton: false });
-                window.exitBulkDeleteMode();
-            } catch (error) {
-                Swal.fire({ icon: 'error', title: 'فشل الحذف', text: error.message });
-            }
-        }
-    });
-};
-
-window.deleteCloudRecord = function(docId) {
-    Swal.fire({
-        title: 'حذف العميل؟',
-        text: 'سيتم مسح بيانات هذا العميل نهائياً.',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        confirmButtonText: 'نعم، احذف',
+        confirmButtonText: 'نعم، احذفهم',
         cancelButtonText: 'إلغاء',
         customClass: { popup: 'ai-swal-popup' }
     }).then(async (result) => {
         if (result.isConfirmed) {
+            // إظهار مؤشر التحميل
+            Swal.fire({
+                title: 'جاري الحذف...',
+                allowOutsideClick: false,
+                didOpen: () => { Swal.showLoading(); }
+            });
+
             try {
-                await db.collection('seller_customers').doc(docId).delete();
-                try {
-                    if (window.AndroidBridge && window.AndroidBridge.cancelReminder) {
-                        window.AndroidBridge.cancelReminder(String(docId));
+                // استخدام نظام الـ Batch لحذف عدة مستندات في طلب واحد (أسرع وأضمن)
+                const batch = db.batch();
+                
+                idsToDelete.forEach(docId => {
+                    const docRef = db.collection('seller_customers').doc(docId);
+                    batch.delete(docRef);
+                    
+                    // إلغاء منبه الأندرويد إن وجد
+                    if (window.AndroidBridge && typeof window.AndroidBridge.cancelReminder === "function") {
+                        window.AndroidBridge.cancelReminder(docId);
                     }
-                } catch(e) {}
-                Swal.fire({ icon: 'success', title: 'تم الحذف', timer: 1000, showConfirmButton: false });
-            } catch(e) {
-                Swal.fire('خطأ', 'فشل حذف السجل', 'error');
+                });
+
+                await batch.commit();
+
+                Swal.fire({
+                    icon: 'success',
+                    title: 'تم الحذف بنجاح',
+                    text: `تم مسح ${idsToDelete.length} سجل بنجاح.`,
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+
+                // الخروج من وضع الحذف المتعدد وتحديث الواجهة
+                if (typeof window.exitBulkDeleteMode === "function") {
+                    window.exitBulkDeleteMode();
+                }
+
+            } catch (error) {
+                console.error("Bulk Delete Error:", error);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'فشل الحذف',
+                    text: 'حدث خطأ في السيرفر: ' + error.message
+                });
             }
         }
     });
 };
-
+// ==========================================
+// 2. تحديث دالة رسم الجدول (Render History)
+// ==========================================
 window.renderHistory = function() {
     const tbody = document.getElementById('historyBody');
     const sellerId = localStorage.getItem('seller_doc_id');
@@ -1372,6 +1593,7 @@ window.renderHistory = function() {
         return;
     }
 
+    // إيقاف أي مستمع قديم لتوفير الأداء
     if(window.customersUnsubscribe) window.customersUnsubscribe();
 
     window.customersUnsubscribe = db.collection('seller_customers')
@@ -1406,20 +1628,75 @@ window.renderHistory = function() {
                     </td>
                 </tr>`;
             }).join('');
+        }, (error) => {
+            console.error("Firestore Error:", error);
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:red;">خطأ في جلب البيانات</td></tr>';
         });
 };
 
+// ===================================
+// 2. دالة حذف عميل فردي (بدون ظهور رابط الموقع)
+// ===================================
+window.deleteCloudRecord = function(docId) {
+    Swal.fire({
+        title: 'تأكيد الحذف',
+        text: 'هل أنت متأكد من حذف هذا العميل نهائياً؟',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'نعم، احذف',
+        cancelButtonText: 'إلغاء',
+        customClass: { popup: 'ai-swal-popup' }
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            Swal.fire({ title: 'جاري الحذف...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+            try {
+                await db.collection('seller_customers').doc(docId).delete();
+                // تنظيف منبه الأندرويد
+                if (window.AndroidBridge && typeof window.AndroidBridge.cancelReminder === "function") {
+                    window.AndroidBridge.cancelReminder(docId);
+                }
+                Swal.fire({ icon: 'success', title: 'تم الحذف بنجاح', timer: 1500, showConfirmButton: false });
+            } catch(e) {
+                Swal.fire('خطأ', 'حدث خطأ أثناء الحذف: ' + e.message, 'error');
+            }
+        }
+    });
+};
 
+// ==========================================
+// 4. دوال التحكم بمربعات التحديد (Checkbox Logic)
+// ==========================================
+window.toggleAllCustomers = function(source) {
+    const checkboxes = document.querySelectorAll('.cust-checkbox');
+    checkboxes.forEach(cb => cb.checked = source.checked);
+};
+
+window.updateSelectAllUI = function() {
+    const allBoxes = document.querySelectorAll('.cust-checkbox');
+    const checkedBoxes = document.querySelectorAll('.cust-checkbox:checked');
+    const selectAll = document.getElementById('selectAllCust');
+    if(selectAll) {
+        selectAll.checked = (allBoxes.length > 0 && allBoxes.length === checkedBoxes.length);
+    }
+};
+
+
+// 4. إصلاح زر حفظ المبيعات (Commit Sales)
 window.commitAllSales = async function() {
-    const unsentList = safeParseJSON('unsent_sales_cache',[]);
-    let history = safeParseJSON('elaraby_sales_v3',[]);
+const unsentList = safeParseJSON('unsent_sales_cache',[]);
+let history = safeParseJSON('elaraby_sales_v3',[]);
     
+    // 🟢 التعديل الأهم: جلب المعرف والاسم مباشرة عند الضغط
     const currentSellerId = localStorage.getItem('seller_doc_id');
     const currentSellerName = localStorage.getItem('seller_name');
 
     if (unsentList.length === 0) return Swal.fire('تنبيه', 'لا توجد مبيعات لإرسالها', 'info');
     
+    // التحقق باستخدام المتغير الجديد
     if (!currentSellerId) {
+        // محاولة إظهار شاشة الدخول إذا لم يكن مسجلاً
         document.getElementById('app-lock-screen').style.display = 'flex';
         return Swal.fire('تنبيه', 'انتهت الجلسة، يرجى تسجيل الدخول مجدداً', 'warning');
     }
@@ -1430,11 +1707,13 @@ window.commitAllSales = async function() {
     try {
         const batch = db.batch();
         const salesRef = db.collection("sales_transactions");
+        // history تم تعريفه مسبقاً في بداية الدالة
 
         unsentList.forEach(item => {
             const newDoc = salesRef.doc();
+            
             const docData = {
-                sellerId: currentSellerId, 
+                sellerId: currentSellerId, // استخدام المتغير المباشر
                 sellerName: currentSellerName,
                 branch: item.branch,
                 product: item.product,
@@ -1469,48 +1748,57 @@ window.commitAllSales = async function() {
         }
     }
 };
-
-const installContainer = document.getElementById('pwa-fixed-container');
-window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    deferredPrompt = e;
-    if(installContainer) {
-        installContainer.style.display = 'block';
-        installContainer.style.animation = 'slideInUp 0.5s ease';
-    }
-});
+      // 13. PWA (Restored Full Logic)
+      const installContainer = document.getElementById('pwa-fixed-container');
+      window.addEventListener('beforeinstallprompt', (e) => {
+          e.preventDefault();
+          deferredPrompt = e;
+          if(installContainer) {
+              installContainer.style.display = 'block';
+              installContainer.style.animation = 'slideInUp 0.5s ease';
+          }
+      });
       
-window.forceInstallPWA = async function() {
-    if (deferredPrompt) {
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
-        deferredPrompt = null;
-        if(outcome === 'accepted' && installContainer) installContainer.style.display = 'none';
-    } else {
-        Swal.fire({ icon: 'info', title: 'تثبيت التطبيق', text: "اضغط على خيارات المتصفح واختر 'Install App' أو 'Add to Home Screen'", confirmButtonText: 'حسناً' });
-    }
-}
+      window.forceInstallPWA = async function() {
+          if (deferredPrompt) {
+              deferredPrompt.prompt();
+              const { outcome } = await deferredPrompt.userChoice;
+              deferredPrompt = null;
+              if(outcome === 'accepted' && installContainer) installContainer.style.display = 'none';
+          } else {
+             alert("⚠️ اضغط على خيارات المتصفح واختر 'Install App' أو 'Add to Home Screen'");
+          }
+      };
       
-function checkNet() {
-    const ind = document.getElementById('net-indicator');
-    const txt = document.getElementById('net-text');
-    const dot = document.getElementById('dot-signal');
-    if(navigator.onLine) {
-        if(ind) ind.className="online-st"; if(txt) txt.innerText="متصل"; if(dot) dot.className="net-dot online-dot";
-    } else {
-        if(ind) ind.className="offline-st"; if(txt) txt.innerText="أوفلاين"; if(dot) dot.className="net-dot offline-dot";
-    }
-}
-window.addEventListener('online', checkNet); window.addEventListener('offline', checkNet);
+      function checkNet() {
+        const ind = document.getElementById('net-indicator');
+        const txt = document.getElementById('net-text');
+        const dot = document.getElementById('dot-signal');
+        if(navigator.onLine) {
+            if(ind) ind.className="online-st"; if(txt) txt.innerText="متصل"; if(dot) dot.className="net-dot online-dot";
+        } else {
+            if(ind) ind.className="offline-st"; if(txt) txt.innerText="أوفلاين"; if(dot) dot.className="net-dot offline-dot";
+        }
+      }
+      window.addEventListener('online', checkNet); window.addEventListener('offline', checkNet);
 
-let pendingSalesList =[];
+// =======================================
+// 🛒 نظام المبيعات المطور (كاش + إرسال مجمع)
+// ======================================
+// مصفوفة لتخزين المنتجات المعلقة (الكاش)
+let pendingSalesList = [];
 
+// 1. فتح وإغلاق النافذة مع التحذير
 window.toggleSalesWindow = function() {
     const win = document.getElementById('salesWin');
     const isOpening = win.style.display === 'none' || win.style.display === '';
     if (!isOpening) {
+        // فحص ما إذا كان هناك مبيعات معلقة في الذاكرة
         const pending = safeParseJSON('unsent_sales_cache',[]);
+        
         if (pending.length > 0) {
+
+            // إظهار تحذير باستخدام 
             Swal.fire({
                 title: 'تنبيه هام!',
                 text: 'لديك مبيعات معلقة لم يتم إرسالها (غير محفوظة). هل أنت متأكد من الإغلاق؟',
@@ -1529,8 +1817,10 @@ window.toggleSalesWindow = function() {
         }
     }
 
+    // تنفيذ الفتح أو الإغلاق الطبيعي (في حالة عدم وجود مبيعات معلقة)
     win.style.display = isOpening ? 'block' : 'none';
     
+    // إعدادات عند الفتح فقط
     if(isOpening) { 
         const today = new Date().toISOString().split('T')[0];
         const dateEl = document.getElementById('s-date');
@@ -1544,6 +1834,9 @@ window.toggleSalesWindow = function() {
     }
 };
 
+
+
+// دالة الإضافة إلى الكاش (التخزين الدائم في المتصفح)
 window.addToPendingList = function() {
     const branchEl = document.getElementById('s-branch');
     const prodEl = document.getElementById('s-prod');
@@ -1556,6 +1849,7 @@ window.addToPendingList = function() {
     const branch = branchEl.value.trim();
     const name = prodEl.value.trim();
     const price = parseFloat(priceEl.value);
+    // التأكد ان الكمية رقم صحيح ولا تقل عن 1
     const qty = parseInt(qtyEl.value) > 0 ? parseInt(qtyEl.value) : 1;
     const date = dateEl ? dateEl.value : new Date().toISOString().split('T')[0];
 
@@ -1565,6 +1859,7 @@ window.addToPendingList = function() {
 
     localStorage.setItem('user_branch_name', branch);
 
+    // إضافة رقم عشوائي للمعرف لمنع تداخل المنتجات
     const newEntry = {
         localId: "TEMP_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
         branch: branch,
@@ -1579,6 +1874,7 @@ window.addToPendingList = function() {
     unsentList.push(newEntry);
     localStorage.setItem('unsent_sales_cache', JSON.stringify(unsentList));
 
+    // تفريغ الحقول
     prodEl.value = '';
     priceEl.value = '';
     if(qtyEl) qtyEl.value = '1'; 
@@ -1587,11 +1883,12 @@ window.addToPendingList = function() {
     updateSalesUI();
 };
 
+// دالة عرض المبيعات (تدمج المسودات المحلية + المحفوظ في السيرفر)
 let salesListener = null;
 
 window.updateSalesUI = function() {
     const tbody = document.getElementById('sales-list-body');
-    const unsentList = safeParseJSON('unsent_sales_cache',[]); 
+    const unsentList = safeParseJSON('unsent_sales_cache', []); // المسودات فقط
     const sDateEl = document.getElementById('s-date');
     const selectedDate = (sDateEl && sDateEl.value) ? sDateEl.value : new Date().toISOString().split('T')[0];
     const dayTotalEl = document.getElementById('day-total');
@@ -1602,6 +1899,7 @@ window.updateSalesUI = function() {
     let html = "";
     let localTotal = 0;
 
+    // 1. عرض المسودات (التي لم تُحفظ بعد) باللون البرتقالي
     unsentList.forEach(item => {
         const rowTotal = (Number(item.price) || 0) * (Number(item.qty) || 1);
         localTotal += rowTotal;
@@ -1617,6 +1915,8 @@ window.updateSalesUI = function() {
 
     if (salesListener) salesListener(); 
 
+    // 2. جلب كل المبيعات من السيرفر لهذا البائع ولهذا التاريخ
+    // حتى لو حذف التطبيق وأعاده، ستظهر هنا فور تسجيل الدخول
     salesListener = db.collection('sales_transactions')
         .where('sellerId', '==', currentSellerId)
         .where('date', '==', selectedDate)
@@ -1648,6 +1948,7 @@ window.updateSalesUI = function() {
 };
 
 
+// حذف من الكاش قبل الإرسال
 window.removeFromUnsent = function(localId) {
     let unsent = safeParseJSON('unsent_sales_cache',[]);
     unsent = unsent.filter(i => i.localId !== localId);
@@ -1655,6 +1956,9 @@ window.removeFromUnsent = function(localId) {
     updateSalesUI();
 };
 
+// ==========================================
+// 1. دالة حذف عملية المبيعات (بدون ظهور رابط الموقع)
+// ==========================================
 window.deleteSaleEntry = async function(localId) {
     Swal.fire({
         title: 'تأكيد الحذف',
@@ -1684,61 +1988,83 @@ window.deleteSaleEntry = async function(localId) {
     });
 };
 
-document.addEventListener('DOMContentLoaded', function() {
-    const hint = document.getElementById('salesHint');
-    
-    if (hint) {
-        const hideHint = () => {
-            hint.classList.remove('show-tooltip');
-            setTimeout(() => { 
-                if (!hint.classList.contains('show-tooltip')) {
-                    hint.style.visibility = 'hidden'; 
+      
+// Sales Tooltip Animation 
+      document.addEventListener('DOMContentLoaded', function() {
+        const hint = document.getElementById('salesHint');
+        
+        if (hint) {
+            // دالة الإخفاء
+            const hideHint = () => {
+                hint.classList.remove('show-tooltip');
+                // ننتظر انتهاء الانيميشن ثم نخفيه تماماً
+                setTimeout(() => { 
+                    // نتأكد أنه لم يظهر مرة أخرى قبل إخفائه
+                    if (!hint.classList.contains('show-tooltip')) {
+                        hint.style.visibility = 'hidden'; 
+                    }
+                }, 500); 
+            };
+
+            // إظهار الإشعار بعد 1.5 ثانية من فتح الصفحة
+            setTimeout(() => {
+                hint.style.visibility = 'visible'; // ضمان الرؤية
+                hint.classList.add('show-tooltip');
+            }, 1500);
+
+            // (جديد) الإخفاء فوراً عند الضغط عليه
+            hint.onclick = hideHint;
+
+            // الإخفاء عند التمرير (Scroll)
+            const onScroll = () => {
+                if (window.scrollY > 50) {
+                    hideHint();
+                    window.removeEventListener('scroll', onScroll); // إزالة المراقب لتخفيف الحمل
                 }
-            }, 500); 
-        };
+            };
+            window.addEventListener('scroll', onScroll);
 
-        setTimeout(() => {
-            hint.style.visibility = 'visible'; 
-            hint.classList.add('show-tooltip');
-        }, 1500);
-
-        hint.onclick = hideHint;
-
-        const onScroll = () => {
-            if (window.scrollY > 50) {
-                hideHint();
-                window.removeEventListener('scroll', onScroll); 
-            }
-        };
-        window.addEventListener('scroll', onScroll);
-        setTimeout(hideHint, 8000);
-    }
-});
+            // الإخفاء التلقائي المؤكد بعد 8 ثواني
+            setTimeout(hideHint, 8000);
+        }
+      });
 
 window.openTour = function() { 
-    document.getElementById('tourModal').style.display='flex'; 
-    document.body.style.overflow = 'hidden'; 
-};
+          document.getElementById('tourModal').style.display='flex'; 
+          document.body.style.overflow = 'hidden'; 
+      };
       
-window.closeTour = function() { 
-    document.getElementById('tourModal').style.display='none'; 
-    document.body.style.overflow = 'auto'; 
-    localStorage.setItem('tour_seen','true'); 
-};
+      window.closeTour = function() { 
+          document.getElementById('tourModal').style.display='none'; 
+          document.body.style.overflow = 'auto'; 
+          localStorage.setItem('tour_seen','true'); 
+      };
       
+// =============================
+// 🚀 تسريع إقلاع الموقع (Performance Fix - النسخة المصححة)
+// =============================
+
 document.addEventListener('DOMContentLoaded', async () => {
     console.log("⚡ جاري جلب البيانات من الكاش السريع...");
+    
     try {
+        // 1. القراءة الصحيحة من localforage (الذي يحفظ به التطبيق)
         const cachedData = await localforage.getItem(CACHE_KEY);
+        
         if (cachedData && cachedData.length > 0) {
+            console.log("✅ تم استرجاع البيانات محلياً في أجزاء من الثانية");
             products = Object.freeze(cachedData.map(Object.freeze));
-            renderCategories(); 
+            renderCategories(); // رسم الأقسام فوراً دون انتظار الإنترنت
         }
-    } catch(e) {}
+    } catch(e) {
+        console.warn("فشل قراءة الكاش المحلي:", e);
+    }
 
+    // 2. المزامنة مع السيرفر في الخلفية (بدون تعطيل الشاشة على المستخدم)
     setTimeout(() => {
         backgroundSync();
         renderHistory();
+        
         setTimeout(() => {
             if(typeof startCloudReminderSystem === 'function') {
                 startCloudReminderSystem();
@@ -1747,13 +2073,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, 100); 
 });
 
+// دالة المزامنة الصامتة في الخلفية
 async function backgroundSync() {
     try {
         const localUpdateTime = await localforage.getItem(CACHE_TIME_KEY) || 0;
+        
+        // جلب الـ Metadata فقط (قراءة واحدة فقط من Firebase)
         const metaDoc = await db.collection("app_config").doc("metadata").get({ source: 'server' });
         const serverUpdateTime = metaDoc.exists ? metaDoc.data().last_update_time : 0;
 
         if (serverUpdateTime > localUpdateTime) {
+            console.log("تحديث جديد متاح.. جاري الجلب");
+            // هنا فقط نقوم بجلب المنتجات
             const snapshot = await db.collection("products").get({ source: 'server' });
             const rawProducts = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
             
@@ -1767,74 +2098,143 @@ async function backgroundSync() {
     }
 }
       
+      
 // ================================
-// 🚀 نظام الإعلانات الاحترافي
+// 🚀 نظام الإعلانات الاحترافي (Multi-Ads) - الإصدار الجديد
 // ================================
 
+console.log("...جاري تهيئة نظام الإعلانات الجديد...");
+
+// الاستماع لمجموعة "ads_campaigns"
 db.collection("ads_campaigns")
   .where("isActive", "==", true) 
   .onSnapshot((snapshot) => {
+      
+      console.log(`📡 تم الاتصال بقاعدة البيانات: وجدنا ${snapshot.size} إعلان نشط.`);
+
+      // 1. تنظيف الإعلانات القديمة
       clearAllAds();
-      if (snapshot.empty) return;
+
+      if (snapshot.empty) {
+          console.log("📭 لا توجد إعلانات لعرضها.");
+          return;
+      }
+
+      // 2. عرض كل إعلان
       snapshot.forEach(doc => {
           const ad = doc.data();
+          console.log(`عرض إعلان: ${ad.label} في مكان: ${ad.position}`);
           renderAdCampaign(ad);
       });
-  }, (error) => {});
+  }, (error) => {
+      console.error("❌ خطأ في جلب الإعلانات:", error);
+  });
 
+// دالة حذف الإعلانات القديمة
 function clearAllAds() {
     document.querySelectorAll('.dynamic-ad-slot').forEach(el => el.remove());
     const oldPopup = document.getElementById('dynamic-popup-ad');
     if (oldPopup) oldPopup.remove();
 }
 
+// دالة التوجيه
 function renderAdCampaign(ad) {
     let content = '';
+    
     if (ad.sourceType === 'code') {
         content = ad.htmlCode;
     } else {
-        content = `<a href="${ad.link || '#'}" target="_blank" style="display:block; width:100%; text-decoration:none;"><img src="${ad.img}" style="width:100%; height:auto; display:block; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.1);" alt="${ad.label}"></a>`;
+        content = `
+            <a href="${ad.link || '#'}" target="_blank" style="display:block; width:100%; text-decoration:none;">
+                <img src="${ad.img}" style="width:100%; height:auto; display:block; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.1);" alt="${ad.label}">
+            </a>
+        `;
     }
 
     switch(ad.position) {
-        case 'popup': renderPopup(content, ad.timer); break;
-        case 'top_bar': insertAd(content, '.main-app-container', 'prepend', 'margin-bottom:20px;'); break;
-        case 'below_search': insertAd(content, '.search-wrapper', 'afterend', 'margin:20px auto; max-width:100%;'); break;
-        case 'footer': insertAd(content, '.app-footer', 'beforebegin', 'margin-top:30px;'); break;
-        case 'floating_bottom': renderFloatingBottom(content); break;
+        case 'popup':
+            renderPopup(content, ad.timer);
+            break;
+        case 'top_bar':
+            insertAd(content, '.main-app-container', 'prepend', 'margin-bottom:20px;');
+            break;
+        case 'below_search':
+            // تم التأكد من أن الكلاس .search-wrapper موجود في قالبك
+            insertAd(content, '.search-wrapper', 'afterend', 'margin:20px auto; max-width:100%;');
+            break;
+        case 'footer':
+            insertAd(content, '.app-footer', 'beforebegin', 'margin-top:30px;');
+            break;
+        case 'floating_bottom':
+            renderFloatingBottom(content);
+            break;
     }
 }
 
+// دالة الحقن (Injection)
 function insertAd(content, selector, position, style = "") {
     const target = document.querySelector(selector);
-    if (!target) return;
+    if (!target) {
+        console.warn(`⚠️ المكان المحدد للإعلان غير موجود: ${selector}`);
+        return;
+    }
+
     const adDiv = document.createElement('div');
     adDiv.className = 'dynamic-ad-slot';
     adDiv.style.cssText = `width:100%; overflow:hidden; text-align:center; ${style}`;
     adDiv.innerHTML = content;
+
     if (position === 'prepend') target.prepend(adDiv);
     else if (position === 'append') target.append(adDiv);
     else if (position === 'afterend') target.insertAdjacentElement('afterend', adDiv);
     else if (position === 'beforebegin') target.insertAdjacentElement('beforebegin', adDiv);
+
     runScripts(adDiv);
 }
 
+// دالة النافذة المنبثقة
 function renderPopup(content, timer) {
     if(document.getElementById('dynamic-popup-ad')) return;
-    const popupHTML = `<div id="dynamic-popup-ad" style="position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:99999; display:flex; align-items:center; justify-content:center; animation:zoomIn 0.3s ease;"><div style="background:#fff; padding:0; border-radius:15px; max-width:90%; width:400px; position:relative; overflow:hidden; box-shadow:0 20px 50px rgba(0,0,0,0.5);"><button onclick="document.getElementById('dynamic-popup-ad').remove()" style="position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.6); color:#fff; border:none; width:32px; height:32px; border-radius:50%; cursor:pointer; font-weight:bold; z-index:10; font-size:18px; line-height:1;">&times;</button><div style="max-height:80vh; overflow-y:auto;">${content}</div>${timer > 0 ? `<div id="popup-timer-bar" style="height:5px; background:#e91e63; width:100%; transition:width ${timer}s linear;"></div>` : ''}</div></div>`;
+
+    const popupHTML = `
+      <div id="dynamic-popup-ad" style="position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:99999; display:flex; align-items:center; justify-content:center; animation:zoomIn 0.3s ease;">
+          <div style="background:#fff; padding:0; border-radius:15px; max-width:90%; width:400px; position:relative; overflow:hidden; box-shadow:0 20px 50px rgba(0,0,0,0.5);">
+              <button onclick="document.getElementById('dynamic-popup-ad').remove()" 
+                      style="position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.6); color:#fff; border:none; width:32px; height:32px; border-radius:50%; cursor:pointer; font-weight:bold; z-index:10; font-size:18px; line-height:1;">
+                  &times;
+              </button>
+              <div style="max-height:80vh; overflow-y:auto;">
+                  ${content}
+              </div>
+              ${timer > 0 ? `<div id="popup-timer-bar" style="height:5px; background:#e91e63; width:100%; transition:width ${timer}s linear;"></div>` : ''}
+          </div>
+      </div>
+    `;
+
     document.body.insertAdjacentHTML('beforeend', popupHTML);
     const popupEl = document.getElementById('dynamic-popup-ad');
     runScripts(popupEl);
+
     if (timer > 0) {
-        setTimeout(() => { const bar = document.getElementById('popup-timer-bar'); if(bar) bar.style.width = '0%'; }, 100);
+        setTimeout(() => {
+            const bar = document.getElementById('popup-timer-bar');
+            if(bar) bar.style.width = '0%';
+        }, 100);
         setTimeout(() => { if(popupEl) popupEl.remove(); }, timer * 1000);
     }
 }
 
+// دالة الإعلان العائم
 function renderFloatingBottom(content) {
     const floatDiv = document.createElement('div');
     floatDiv.className = 'dynamic-ad-slot';
-    floatDiv.style.cssText = `position: fixed; bottom: 0; left: 0; width: 100%; background: #fff; border-top: 1px solid #ddd; z-index: 10000; text-align: center; padding: 5px; box-shadow: 0 -5px 15px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; min-height: 60px;`;
+    floatDiv.style.cssText = `
+        position: fixed; bottom: 0; left: 0; width: 100%; 
+        background: #fff; border-top: 1px solid #ddd; 
+        z-index: 10000; text-align: center; padding: 5px;
+        box-shadow: 0 -5px 15px rgba(0,0,0,0.1); display: flex; 
+        align-items: center; justify-content: center; min-height: 60px;
+    `;
     const closeBtn = `<button onclick="this.parentElement.remove()" style="position:absolute; top:-15px; right:10px; background:#333; color:#fff; border:none; border-radius:50%; width:25px; height:25px; cursor:pointer; z-index:10001;">×</button>`;
     floatDiv.innerHTML = closeBtn + content;
     document.body.appendChild(floatDiv);
@@ -1842,6 +2242,7 @@ function renderFloatingBottom(content) {
     runScripts(floatDiv);
 }
 
+// تشغيل السكريبتات الداخلية
 function runScripts(container) {
     const scripts = container.querySelectorAll("script");
     scripts.forEach((oldScript) => {
@@ -1853,174 +2254,238 @@ function runScripts(container) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    // --- منطق زر صيانة العربي ---
     const maintBtn = document.getElementById('maintBtn');
     const maintMenu = document.getElementById('maintMenu');
+
     if (maintBtn && maintMenu) {
         maintBtn.addEventListener('click', function(e) {
             e.preventDefault(); e.stopPropagation();
             maintMenu.classList.toggle('show-maint');
+
+            // إغلاق قائمة بي تك إذا كانت مفتوحة
             document.getElementById('btechMenu').classList.remove('show-maint');
         });
     }
 
+    // --- منطق زر بي تك (الجديد) ---
     const btechBtn = document.getElementById('btechBtn');
     const btechMenu = document.getElementById('btechMenu');
+
     if (btechBtn && btechMenu) {
         btechBtn.addEventListener('click', function(e) {
             e.preventDefault(); e.stopPropagation();
             btechMenu.classList.toggle('show-maint');
+
+            // إغلاق قائمة الصيانة إذا كانت مفتوحة
             document.getElementById('maintMenu').classList.remove('show-maint');
         });
     }
 
+    // إغلاق القوائم عند الضغط في أي مكان
     document.addEventListener('click', function() {
         if(maintMenu) maintMenu.classList.remove('show-maint');
         if(btechMenu) btechMenu.classList.remove('show-maint');
     });
 
+    // دالة مساعدة لإغلاق القائمة عند اختيار الباندل
     window.toggleBtechMenu = function() {
         if(btechMenu) btechMenu.classList.remove('show-maint');
     };
 });
 
-window.toggleRecentMenu = function() {
-    var menu = document.getElementById('recent-drop-list');
-    if(menu) menu.classList.toggle('show');
-};
 
-window.addEventListener('click', function(e) {
-    if (!e.target.closest('.recent-wrapper')) {
-        var menu = document.getElementById('recent-drop-list');
-        if(menu) menu.classList.remove('show');
-    }
-});
+// وظائف القائمة المنسدلة
+      window.toggleRecentMenu = function() {
+          var menu = document.getElementById('recent-drop-list');
+          if(menu) menu.classList.toggle('show');
+      };
 
-window.loadRecentSearches = function() {
-    var wrapper = document.getElementById("recent-wrapper-box");
-    var list = document.getElementById("recent-drop-list");
-    if(!wrapper || !list) return; 
+      // إغلاق القائمة عند الضغط في الخارج
+      window.addEventListener('click', function(e) {
+          if (!e.target.closest('.recent-wrapper')) {
+              var menu = document.getElementById('recent-drop-list');
+              if(menu) menu.classList.remove('show');
+          }
+      });
 
-    var recent = safeParseJSON(RECENT_SEARCH_KEY,[]);
-    if (recent.length === 0) {
-        wrapper.style.display = 'none';
-        return;
-    }
+      // دالة تحميل السجل
+      window.loadRecentSearches = function() {
+          var wrapper = document.getElementById("recent-wrapper-box");
+          var list = document.getElementById("recent-drop-list");
+          
+          if(!wrapper || !list) return; 
 
-    wrapper.style.display = 'flex';
-    var html = recent.map(function(r) {
-        return '<div class="recent-list-item" onclick="applyRecentSearch(\'' + r + '\')"><span>' + r + '</span><span style="font-size:10px; opacity:0.5;">↖</span></div>';
-    }).join('');
+          var recent = safeParseJSON(RECENT_SEARCH_KEY,[]);
+          
+          if (recent.length === 0) {
+              wrapper.style.display = 'none';
+              return;
+          }
 
-    html += '<div class="recent-list-item" onclick="clearRecentSearches()" style="color:red; justify-content:center; font-weight:bold; background:#fff5f5;">🗑️ مسح الكل</div>';
-    list.innerHTML = html;
-};
+          wrapper.style.display = 'flex';
+          
+          var html = recent.map(function(r) {
+              return '<div class="recent-list-item" onclick="applyRecentSearch(\'' + r + '\')">' +
+                     '<span>' + r + '</span>' +
+                     '<span style="font-size:10px; opacity:0.5;">↖</span>' +
+                     '</div>';
+          }).join('');
 
-window.applyRecentSearch = function(txt) {
-    var inp = document.getElementById('main-search');
-    if(inp) inp.value = txt;
-    var menu = document.getElementById('recent-drop-list');
-    if(menu) menu.classList.remove('show');
-    if(typeof doSearch === 'function') doSearch();
-};
+          html += '<div class="recent-list-item" onclick="clearRecentSearches()" style="color:red; justify-content:center; font-weight:bold; background:#fff5f5;">🗑️ مسح الكل</div>';
+          
+          list.innerHTML = html;
+      };
 
-window.clearRecentSearches = function() {
-    localStorage.removeItem(RECENT_SEARCH_KEY);
-    loadRecentSearches();
-};
+      window.applyRecentSearch = function(txt) {
+          var inp = document.getElementById('main-search');
+          if(inp) inp.value = txt;
+          
+          var menu = document.getElementById('recent-drop-list');
+          if(menu) menu.classList.remove('show');
+          
+          if(typeof doSearch === 'function') doSearch();
+      };
 
-setTimeout(function(){ 
-    if(typeof loadRecentSearches === 'function') loadRecentSearches(); 
-}, 500);
+      window.clearRecentSearches = function() {
+          localStorage.removeItem(RECENT_SEARCH_KEY);
+          loadRecentSearches();
+      };
 
-window.openBundleModal = function() {
-    document.getElementById('bundleModal').style.display = 'flex';
-    const searchInput = document.getElementById('bundleSearch');
-    if(searchInput) searchInput.value = '';
-    document.getElementById('no-bundles-msg').style.display = 'none';
-    loadBundlesData();
-};
+      // تشغيل الدالة بأمان
+      setTimeout(function(){ 
+          if(typeof loadRecentSearches === 'function') loadRecentSearches(); 
+      }, 500);
 
-window.closeBundleModal = function() { document.getElementById('bundleModal').style.display = 'none'; };
-
-window.filterClientBundles = function() {
-    const input = document.getElementById('bundleSearch').value.toLowerCase();
-    const tableBody = document.getElementById('bundleTableBody');
-    const rows = tableBody.getElementsByTagName('tr');
-    const noMsg = document.getElementById('no-bundles-msg');
-    let hasResults = false;
-
-    for (let i = 0; i < rows.length; i++) {
-        const text = rows[i].textContent.toLowerCase();
-        if (text.includes(input)) {
-            rows[i].style.display = "";
-            hasResults = true;
-        } else {
-            rows[i].style.display = "none";
-        }
-    }
-    if(noMsg) noMsg.style.display = hasResults ? 'none' : 'block';
-};
-
-function loadBundlesData() {
-    const tbody = document.getElementById('bundleTableBody');
-    db.collection("bundle_codes").orderBy("createdAt", "desc").get().then((querySnapshot) => {
-        if (querySnapshot.empty) {
-            tbody.innerHTML = "<tr><td colspan='2' style='text-align:center; padding:20px;'>لا توجد أكواد نشطة حالياً 📭</td></tr>";
-            return;
-        }
-        let html = "";
-        querySnapshot.forEach((doc) => {
-            const d = doc.data();
-            html += `<tr><td><div style="font-weight:bold;">${d.name}</div><div style="font-size:11px; color:#777;">${d.desc || ''}</div></td><td style="text-align:center; width:120px;"><div class="code-badge" onclick="copyCode('${d.code}')">${d.code} <i class="far fa-copy"></i></div></td></tr>`;
-        });
-        tbody.innerHTML = html;
-        filterClientBundles();
-    }).catch((error) => {
-        tbody.innerHTML = "<tr><td colspan='2' style='color:red; text-align:center;'>خطأ في التحميل</td></tr>";
-    });
-}
-
-window.copyCode = function(code) {
-    navigator.clipboard.writeText(code).then(() => {
-        Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'تم نسخ الكود: ' + code, showConfirmButton: false, timer: 2000 });
-    });
-};
+// --- نظام أكواد باندل (مع البحث) ---
       
-document.addEventListener('DOMContentLoaded', () => {
-    const bundleEl = document.getElementById('bundleModal');
-    if (bundleEl) {
-        bundleEl.addEventListener('click', function(e) {
-            if (e.target === this) closeBundleModal();
-        });
-    }
-});
+      window.openBundleModal = function() {
+          document.getElementById('bundleModal').style.display = 'flex';
+          // تفريغ مربع البحث عند الفتح
+          const searchInput = document.getElementById('bundleSearch');
+          if(searchInput) searchInput.value = '';
+          // إخفاء رسالة لا توجد نتائج
+          document.getElementById('no-bundles-msg').style.display = 'none';
+          
+          loadBundlesData();
+      };
 
-let SERVER_ACCESS_CODE = ""; 
+      window.closeBundleModal = function() {
+          document.getElementById('bundleModal').style.display = 'none';
+      };
 
-db.collection("app_config").doc("access_control").onSnapshot((doc) => {
-    if (doc.exists) {
-        const data = doc.data();
-        const newCode = data.searchPageCode;
-        SERVER_ACCESS_CODE = newCode;
+      // دالة الفلترة الفورية
+      window.filterClientBundles = function() {
+          const input = document.getElementById('bundleSearch').value.toLowerCase();
+          const tableBody = document.getElementById('bundleTableBody');
+          const rows = tableBody.getElementsByTagName('tr');
+          const noMsg = document.getElementById('no-bundles-msg');
+          let hasResults = false;
 
-        const isLoggedIn = localStorage.getItem('is_verified_seller') === 'true';
-        const userSavedCode = localStorage.getItem('saved_access_code');
+          for (let i = 0; i < rows.length; i++) {
+              const text = rows[i].textContent.toLowerCase();
+              if (text.includes(input)) {
+                  rows[i].style.display = "";
+                  hasResults = true;
+              } else {
+                  rows[i].style.display = "none";
+              }
+          }
 
-        if (isLoggedIn && userSavedCode && userSavedCode !== newCode) {
-            console.log("⛔ الكود تغير! جاري طرد المستخدم...");
-            forceLogout("⚠️ تم تغيير كود الدخول من الإدارة.\nيرجى إدخال الكود الجديد للمتابعة.");
-        }
-    }
-});
+          // إظهار رسالة إذا لم توجد نتائج
+          if(noMsg) noMsg.style.display = hasResults ? 'none' : 'block';
+      };
 
+      function loadBundlesData() {
+          const tbody = document.getElementById('bundleTableBody');
+          
+          db.collection("bundle_codes").orderBy("createdAt", "desc").get().then((querySnapshot) => {
+              if (querySnapshot.empty) {
+                  tbody.innerHTML = "<tr><td colspan='2' style='text-align:center; padding:20px;'>لا توجد أكواد نشطة حالياً 📭</td></tr>";
+                  return;
+              }
+              
+              let html = "";
+              querySnapshot.forEach((doc) => {
+                  const d = doc.data();
+                  html += `
+                    <tr>
+                        <td>
+                            <div style="font-weight:bold;">${d.name}</div>
+                            <div style="font-size:11px; color:#777;">${d.desc || ''}</div>
+                        </td>
+                        <td style="text-align:center; width:120px;">
+                            <div class="code-badge" onclick="copyCode('${d.code}')">
+                                ${d.code} <i class="far fa-copy"></i>
+                            </div>
+                        </td>
+                    </tr>`;
+              });
+              tbody.innerHTML = html;
+
+              // إعادة تطبيق الفلتر إذا كان هناك نص مكتوب
+              filterClientBundles();
+          }).catch((error) => {
+              tbody.innerHTML = "<tr><td colspan='2' style='color:red; text-align:center;'>خطأ في التحميل</td></tr>";
+          });
+      }
+
+      window.copyCode = function(code) {
+          navigator.clipboard.writeText(code).then(() => {
+
+              // تأثير بصري بسيط عند النسخ
+              alert("تم نسخ الكود: " + code + " ✅");
+          });
+      };
+      
+      document.getElementById('bundleModal').addEventListener('click', function(e) {
+          if (e.target === this) closeBundleModal();
+      });
+
+      // ==========================================
+      // 🔐 نظام الحماية الذكي (تحديث فوري + خروج إجباري)
+      // ==========================================
+      
+      let SERVER_ACCESS_CODE = ""; 
+
+      // مراقبة الكود في قاعدة البيانات لحظة بلحظة
+      db.collection("app_config").doc("access_control").onSnapshot((doc) => {
+          if (doc.exists) {
+              const data = doc.data();
+              // 1. جلب الكود الجديد من السيرفر
+              const newCode = data.searchPageCode;
+              SERVER_ACCESS_CODE = newCode;
+
+              // 2. التحقق مما إذا كان المستخدم مسجل دخول حالياً
+              const isLoggedIn = localStorage.getItem('is_verified_seller') === 'true';
+              const userSavedCode = localStorage.getItem('saved_access_code');
+
+              // 3. المنطق الخطير: إذا كان مسجلاً للدخول ولكن الكود تغير!
+              if (isLoggedIn && userSavedCode && userSavedCode !== newCode) {
+                  console.log("⛔ الكود تغير! جاري طرد المستخدم...");
+                  forceLogout("⚠️ تم تغيير كود الدخول من الإدارة.\nيرجى إدخال الكود الجديد للمتابعة.");
+              }
+          }
+      });
+
+
+// =====================================
+// 🔐 نظام تسجيل دخول البائعين 
+// =====================================
+
+// التحقق من الجلسة عند بدء التشغيل
 document.addEventListener("DOMContentLoaded", async () => {
     const savedUser = localStorage.getItem('seller_username');
     const savedDocId = localStorage.getItem('seller_doc_id'); 
     
     if (savedUser && savedDocId) {
+        // تشغيل المراقبة فوراً
         monitorUserSession(savedDocId);
+        
+        // إخفاء شاشة القفل
         document.getElementById('app-lock-screen').style.display = 'none';
         
+        // تعبئة البيانات
         const savedBranch = localStorage.getItem('seller_branch');
         const branchField = document.getElementById('s-branch');
         if(branchField && savedBranch) branchField.value = savedBranch;
@@ -2034,6 +2499,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 });
 
+//  دالة تسجيل الدخول (مع مسح الكاش إذا تغير المستخدم)
+// ======================================
 window.performLogin = async function() {
     const userInp = document.getElementById('login-user').value.trim().toLowerCase();
     const passInp = document.getElementById('login-pass').value.trim();
@@ -2048,21 +2515,26 @@ window.performLogin = async function() {
 
     try {
         const sellerEmail = `${userInp}@elaraby.com`;
+
+        // 1. تسجيل الدخول عبر Firebase Auth
         const userCredential = await firebase.auth().signInWithEmailAndPassword(sellerEmail, passInp);
         const uid = userCredential.user.uid;
 
+        // 2. جلب بيانات البائع للتأكد من الحالة
         const docRef = await db.collection('sellers_accounts').doc(uid).get();
         if (!docRef.exists) throw new Error("بيانات الحساب غير مكتملة");
         
         const userData = docRef.data();
         if (userData.isActive === false) throw new Error("⛔ هذا الحساب محظور.");
 
+        // ===== 🛡️ إنشاء وحفظ كود الجلسة (لإدارة الأجهزة) =====
         const uniqueSessionId = Date.now() + "_" + Math.floor(Math.random() * 1000000);
         await db.collection('sellers_accounts').doc(uid).update({
             active_session_id: uniqueSessionId,
             last_login_time: Date.now()
         });
         localStorage.setItem('current_session_id', uniqueSessionId);
+        // ======================================================
 
         const oldUser = localStorage.getItem('seller_username');
         if (oldUser && oldUser !== userData.username) {
@@ -2080,10 +2552,14 @@ window.performLogin = async function() {
         setTimeout(() => { document.getElementById('app-lock-screen').style.display = 'none'; }, 500);
 
         if(window.renderHistory) window.renderHistory();
+
+        // --- بداية شارة الترحيب الاحترافية ---
         
+        // 1. تحديد وقت الترحيب الذكي (صباحاً / مساءً)
         const currentHour = new Date().getHours();
         const greetingMsg = (currentHour < 12) ? 'صباح الخير' : 'مساء الخير';
         
+        // 2. عرض الشارة الجانبية (Toast)
         Swal.fire({
             toast: true,
             position: 'top-end',
@@ -2113,13 +2589,14 @@ window.performLogin = async function() {
             `
         });
     
+        // تشغيل المراقب
         monitorUserSession(uid);
-        triggerEdgeMenuHint();
+triggerEdgeMenuHint();
 
         if (!localStorage.getItem('tour_seen')) {
             setTimeout(() => {
                 openTour();
-            }, 3500); 
+            }, 3500); // تأخير ثانية ونصف حتى يشاهد شارة الترحيب أولاً
         }
 
     } catch (error) {
@@ -2134,79 +2611,103 @@ window.performLogin = async function() {
     }
 };
 
+// دالة مراقبة الجلسة (للطرد الفوري)
 function monitorUserSession(docId) {
     if (!docId) return;
 
+    // 1. تحديث التواجد فوراً بمجرد فتح التطبيق أو تسجيل الدخول
     db.collection('sellers_accounts').doc(docId).update({ lastSeen: Date.now() }).catch(()=>{});
 
+    // 2. دالة التحديث الذكية (مقفلة بمؤقت 4 دقائق لحماية الكوتة)
     let lastUpdateTime = Date.now();
     window.triggerUserActivity = () => {
         const now = Date.now();
+        // التحديث يتم فقط إذا مرت 4 دقائق على آخر إشارة تم إرسالها
         if (now - lastUpdateTime > 4 * 60 * 1000) { 
             db.collection('sellers_accounts').doc(docId).update({ lastSeen: now }).catch(()=>{});
             lastUpdateTime = now;
         }
     };
 
+    // ======================
+    // 3. ربط الإشارة بالأفعال الحقيقية للمستخدم
+    // =======================
+
+    // أ) عند الكتابة أو البحث في شريط البحث الرئيسي
     const searchInput = document.getElementById('main-search');
     if (searchInput) {
-        searchInput.addEventListener('input', window.triggerUserActivity); 
-        searchInput.addEventListener('keypress', window.triggerUserActivity); 
+        searchInput.addEventListener('input', window.triggerUserActivity); // عند الكتابة
+        searchInput.addEventListener('keypress', window.triggerUserActivity); // عند ضغط Enter
     }
 
+    // ب) عند الضغط على أي زر أو عنصر تفاعلي في الشاشة
     document.addEventListener('click', function(e) {
         const t = e.target;
+        
+        // نتحقق إذا كان العنصر الذي تم الضغط عليه هو زر، حقل إدخال، أو كارت منتج
         if (
-            t.closest('button') ||              
-            t.tagName === 'INPUT' ||            
-            t.tagName === 'SELECT' ||           
-            t.closest('.sug-item') ||           
-            t.closest('.cat-main-text') ||      
-            t.closest('.thumb-item') ||         
-            t.closest('.card-footer-actions')   
+            t.closest('button') ||              // أي زر في التطبيق (مثل: إدراج، حفظ، عرض السجل)
+            t.tagName === 'INPUT' ||            // حقول إدخال المبيعات والعملاء
+            t.tagName === 'SELECT' ||           // القوائم المنسدلة (الكمية، كاش/تقسيط)
+            t.closest('.sug-item') ||           // الضغط على اقتراحات البحث
+            t.closest('.cat-main-text') ||      // الضغط على الأقسام
+            t.closest('.thumb-item') ||         // تصفح صور المنتج
+            t.closest('.card-footer-actions')   // أزرار الواتساب وتسجيل العميل
         ) {
             window.triggerUserActivity();
         }
     });
 
+    // ==========================================
+    // 4. مراقبة الجلسة والطرد (كما هي بدون تغيير)
+    // ==========================================
     if (window.sessionUnsubscribe) window.sessionUnsubscribe();
 
-    window.sessionUnsubscribe = db.collection('sellers_accounts').doc(docId)
-        .onSnapshot({ includeMetadataChanges: true }, (doc) => {
-            if (doc.metadata.fromCache) return; 
+window.sessionUnsubscribe = db.collection('sellers_accounts').doc(docId)
+    .onSnapshot({ includeMetadataChanges: true }, (doc) => {
+        // تجاهل التحديثات إذا كان الجهاز أوفلاين لمنع الخروج الخاطئ
+        if (doc.metadata.fromCache) return; 
 
-            if (doc.exists) {
-                const data = doc.data();
-                const localSession = localStorage.getItem('current_session_id');
-                const serverSession = data.active_session_id;
+        if (doc.exists) {
+            const data = doc.data();
+            const localSession = localStorage.getItem('current_session_id');
+            const serverSession = data.active_session_id;
 
-                if (data.isActive === false) {
-                    forceLogout("⛔ تم حظر حسابك من قبل الإدارة.");
-                    return;
-                }
-
-                if (localSession && serverSession && localSession !== serverSession) {
-                    forceLogout("⚠️ تم تسجيل الدخول من جهاز آخر.\nتم إنهاء جلستك هنا للأمان.");
-                }
+            if (data.isActive === false) {
+                forceLogout("⛔ تم حظر حسابك من قبل الإدارة.");
+                return;
             }
-        }, (error) => {
-            console.log("Monitoring paused");
-        });
+
+            // لا نخرج المستخدم إلا إذا كان هناك session حقيقي مختلف من السيرفر
+            if (localSession && serverSession && localSession !== serverSession) {
+                forceLogout("⚠️ تم تسجيل الدخول من جهاز آخر.\nتم إنهاء جلستك هنا للأمان.");
+            }
+        }
+    }, (error) => {
+        console.log("Monitoring paused, ignoring to keep session alive.");
+    });
 }
 
+// دالة الخروج الإجباري (محدثة للتفريغ الفوري)
 async function forceLogout(reason) {
     if (window.sessionUnsubscribe) window.sessionUnsubscribe();
 
+    // === الإضافة الهامة: الخروج من نظام مصادقة فايربيس ===
     try {
         await firebase.auth().signOut();
-    } catch(e) {}
+    } catch(e) {
+        console.error("خطأ أثناء الخروج من فايربيس", e);
+    }
+    // ====================================================
 
+    // مسح الذاكرة
     localStorage.removeItem('seller_username');
     localStorage.removeItem('seller_doc_id');
     localStorage.removeItem('current_session_id');
     localStorage.removeItem('is_verified_seller');
     localStorage.removeItem('edge_hint_seen');
     
+    // إظهار شاشة القفل فوراً
     const screen = document.getElementById('app-lock-screen');
     const msgBox = document.getElementById('login-msg');
     
@@ -2215,6 +2716,7 @@ async function forceLogout(reason) {
         screen.style.opacity = '1';
     }
 
+    // تفريغ حقول الدخول لعدم ترك الباسورد القديم
     const userInp = document.getElementById('login-user');
     const passInp = document.getElementById('login-pass');
     if(userInp) userInp.value = '';
@@ -2229,9 +2731,13 @@ async function forceLogout(reason) {
         msgBox.style.borderRadius = '8px';
     }
 
+    // إغلاق الشريط الجانبي
     if (typeof closeEdgeSidebar === 'function') closeEdgeSidebar();
 }
 
+// ========================================
+// دالة تسجيل الخروج اليدوي (محدثة للخروج الفوري اللحظي)
+// ========================================
 window.doLogout = function() {
     Swal.fire({
         title: 'تسجيل الخروج',
@@ -2244,74 +2750,106 @@ window.doLogout = function() {
         cancelButtonText: 'إلغاء'
     }).then(async (result) => {
         if (result.isConfirmed) {
+            
+            // إظهار مؤشر تحميل سريع للمستخدم
             Swal.fire({
                 title: 'جاري تسجيل الخروج...',
                 allowOutsideClick: false,
                 didOpen: () => { Swal.showLoading(); }
             });
 
+            // 1. إيقاف مراقب الجلسة
             if (window.sessionUnsubscribe) window.sessionUnsubscribe();
 
+            // 2. مسح كود الجلسة من السيرفر لمنع الدخول التلقائي
             const docId = localStorage.getItem('seller_doc_id');
             if(docId) {
                 try {
                     await db.collection('sellers_accounts').doc(docId).update({
                         active_session_id: null
                     });
-                } catch(e) {}
+                } catch(e) { console.log("Logout cleanup error", e); }
             }
 
+            // 3. 🚨 الخروج الفعلي من فايربيس (كان مفقوداً هنا)
             try {
                 await firebase.auth().signOut();
-            } catch(e) {}
+            } catch(e) { console.error("Firebase SignOut Error", e); }
 
+            // 4. مسح بيانات الجلسة من المتصفح
             localStorage.removeItem('seller_username');
             localStorage.removeItem('seller_doc_id');
             localStorage.removeItem('current_session_id');
             localStorage.removeItem('is_verified_seller');
-            localStorage.removeItem('edge_hint_seen'); 
+            localStorage.removeItem('edge_hint_seen'); // للسماح للتلميح بالعمل لاحقاً
             
+            // 5. تحديث واجهة المستخدم فوراً (بدون Reload)
             const screen = document.getElementById('app-lock-screen');
             if (screen) {
                 screen.style.display = 'flex';
                 screen.style.opacity = '1';
             }
 
+            // تفريغ حقول الدخول لعدم ظهور الباسورد للزائر التالي
             const userInp = document.getElementById('login-user');
             const passInp = document.getElementById('login-pass');
             if(userInp) userInp.value = '';
             if(passInp) passInp.value = '';
 
+            // إخفاء رسائل الخطأ إن وجدت
             const msgBox = document.getElementById('login-msg');
             if(msgBox) msgBox.style.display = 'none';
 
+            // إغلاق الشريط الجانبي إذا كان مفتوحاً
             if (typeof closeEdgeSidebar === 'function') closeEdgeSidebar();
 
+            // إغلاق رسالة التحميل
             Swal.close();
         }
     });
 };
 
+// إضافة زر خروج احترافي في الفوتر
+const footer = document.querySelector('.app-footer');
+if(footer) {
+    const logoutBtnContainer = document.createElement('div');
+    logoutBtnContainer.innerHTML = `
+
+    `;
+    footer.appendChild(logoutBtnContainer);
+}
+
+
+// ===============================
+// 🛡️ نظام الحماية الذكي (تخطي فحص جوجل)
+// ================================
+
+// 1. التحقق مما إذا كان الزائر هو روبوت فحص (مثل عناكب جوجل)
 var isGoogleBot = /bot|googlebot|crawler|spider|robot|crawling/i.test(navigator.userAgent);
 
+// 2. تفعيل الحماية فقط إذا كان الزائر إنساناً عادياً (وليس روبوت جوجل)
 if (!isGoogleBot) {
+    
+    // منع القائمة المنسدلة (كليك يمين)
     document.addEventListener('contextmenu', function(event) {
         event.preventDefault();
     });
 
+    // منع اختصارات لوحة المفاتيح الخاصة بالمطورين
     document.onkeydown = function(e) {
         if (
-            e.keyCode == 123 || 
-            (e.ctrlKey && e.shiftKey && e.keyCode == 73) || 
-            (e.ctrlKey && e.shiftKey && e.keyCode == 67) || 
-            (e.ctrlKey && e.shiftKey && e.keyCode == 74) || 
-            (e.ctrlKey && e.keyCode == 85) || 
-            (e.ctrlKey && e.keyCode == 83)    
+            e.keyCode == 123 || // F12
+            (e.ctrlKey && e.shiftKey && e.keyCode == 73) || // Ctrl+Shift+I
+            (e.ctrlKey && e.shiftKey && e.keyCode == 67) || // Ctrl+Shift+C
+            (e.ctrlKey && e.shiftKey && e.keyCode == 74) || // Ctrl+Shift+J
+            (e.ctrlKey && e.keyCode == 85) || // Ctrl+U (View Source)
+            (e.ctrlKey && e.keyCode == 83)    // Ctrl+S (Save)
         ) {
             return false;
         }
     };
     
+    // تشويش محتوى الصفحة عند محاولة الطباعة
     window.onbeforeprint = function() {
         document.body.style.display = "none";
     };
@@ -2320,6 +2858,7 @@ if (!isGoogleBot) {
     };
 }
 
+// تحذير عند مغادرة الصفحة مع وجود مبيعات غير محفوظة
 window.onbeforeunload = function() {
     const pending = safeParseJSON('unsent_sales_cache',[]);
     if (pending.length > 0) {
@@ -2327,7 +2866,14 @@ window.onbeforeunload = function() {
     }
 };
 
-let activeRemindersList =[]; 
+// ===================================
+// 🚨 نظام التنبيه السحابي الذكي (Cloud Reminders)
+// ===================================
+
+let activeRemindersList = []; // قائمة محلية لتخزين التذكيرات النشطة
+
+// 1. مراقب التذكيرات (يستمع للسيرفر ويحدث القائمة المحلية)
+// متغير عام لحفظ حالة الاتصال
 let reminderUnsubscribe = null; 
 
 function startCloudReminderSystem() {
@@ -2339,7 +2885,7 @@ function startCloudReminderSystem() {
     db.collection('seller_customers')
       .where('sellerId', '==', sellerId)
       .where('isNotified', '==', false)
-      .get() 
+      .get() // تغيير هام لتقليل الـ Quota
       .then((snapshot) => {
           activeRemindersList = snapshot.docs.map(doc => ({
               id: doc.id,
@@ -2362,9 +2908,11 @@ function startCloudReminderSystem() {
           });
       }).catch(err => console.log("Reminder Error:", err));
 }
-
+// 2. نافذة التنبيه (الشكل والتصميم + إشعار النظام)
 function showCloudAlert(customer) {
+    // 1. إشعار داخل التطبيق (إذا كان التطبيق مفتوحاً في الشاشة)
     if (document.visibilityState === 'visible') {
+        // تشغيل الصوت والاهتزاز
         if (window.navigator && window.navigator.vibrate) window.navigator.vibrate([500, 110, 500]);
         try {
             const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -2381,14 +2929,17 @@ function showCloudAlert(customer) {
                     المنتج: <b style="color:#1a73e8;">${customer.product}</b><br>
                     الهاتف: <b style="direction:ltr; display:inline-block;">${customer.phone}</b>
                 </div>
+                
                 <button onclick="handleCloudCall('${customer.id}', '${customer.phone}')" 
                     style="background:#28a745; color:white; border:none; padding:15px; border-radius:10px; cursor:pointer; font-weight:bold; width:100%; font-size:16px; margin-bottom:10px;">
                     📞 اتصل الآن
                 </button>
+    
                 <button onclick="postponeCloudReminder('${customer.id}')" 
                     style="background:#f59e0b; color:white; border:none; padding:12px; border-radius:10px; cursor:pointer; font-weight:bold; width:100%; font-size:14px; margin-bottom:10px;">
                     ⏳ ذكرني لاحقاً (15 دقيقة)
                 </button>
+    
                 <button onclick="ignoreCloudReminder('${customer.id}')" 
                     style="background:#6b7280; color:white; border:none; padding:10px; border-radius:10px; cursor:pointer; width:100%; font-size:13px;">
                     تجاهل
@@ -2400,23 +2951,26 @@ function showCloudAlert(customer) {
         });
     }
 
+    // 2. إشعار النظام الأساسي (يعمل حتى لو كان التطبيق في الخلفية أو الشاشة مغلقة)
     if ("Notification" in window && Notification.permission === "granted") {
         navigator.serviceWorker.ready.then(function(registration) {
             registration.showNotification("🔔 حان موعد الاتصال بالعميل!", {
                 body: `العميل: ${customer.name}\nالمنتج: ${customer.product}\nاضغط هنا للاتصال به الآن.`,
-                icon: "https://i.top4top.io/p_3662hu6pn1.png", 
-                vibrate:[500, 200, 500, 200, 500],
-                requireInteraction: true, 
-                tag: customer.id, 
+                icon: "https://i.top4top.io/p_3662hu6pn1.png", // أيقونة تطبيقك
+                vibrate: [500, 200, 500, 200, 500],
+                requireInteraction: true, // يبقى الإشعار حتى يتفاعل معه المستخدم
+                tag: customer.id, // لمنع تكرار نفس الإشعار
                 data: { phone: customer.phone, id: customer.id }
             });
         });
     }
 
+    // منع تكرار التنبيه محلياً
     const index = activeRemindersList.findIndex(c => c.id === customer.id);
     if(index > -1) activeRemindersList.splice(index, 1);
 }
 
+// إضافة كود الإلغاء داخل دالة handleCloudCall
 window.handleCloudCall = async function(docId, phone) {
     Swal.close();
     window.location.href = "tel:" + phone;
@@ -2439,25 +2993,32 @@ window.handleCloudCall = async function(docId, phone) {
             });
         });
 
+        // 🔥 إلغاء منبه الأندرويد حتى لا يرن لاحقاً
         if (window.AndroidBridge && window.AndroidBridge.cancelReminder) {
-            window.AndroidBridge.cancelReminder(String(docId));
+            window.AndroidBridge.cancelReminder(docId);
         }
 
         const Toast = Swal.mixin({toast: true, position: 'top-end', showConfirmButton: false, timer: 3000});
         Toast.fire({icon: 'success', title: 'تم تحديث حالة العميل'});
 
-    } catch(e) {}
+    } catch(e) { console.error("Call Update Error", e); }
 };
 
+
+
+// 4. دالة التأجيل (Postpone) مع ربط منبه الأندرويد
 window.postponeCloudReminder = async function(docId) {
     Swal.close();
     try {
+        // إضافة 15 دقيقة
         const newTime = Date.now() + (15 * 60 * 1000);
+        
         await db.collection('seller_customers').doc(docId).update({
             reminderAt: newTime,
             isNotified: false 
         });
 
+// 🔥 إخبار نظام الأندرويد بالموعد الجديد
         if (window.AndroidBridge && window.AndroidBridge.setAlarm) {
             const customer = activeRemindersList.find(c => c.id === docId);
             if (customer) {
@@ -2472,11 +3033,17 @@ window.postponeCloudReminder = async function(docId) {
             }
         }
         Swal.fire({ icon: 'success', title: 'تم التأجيل 15 دقيقة', timer: 1500, showConfirmButton: false });
-    } catch(e) {}
+    } catch(e) {
+        console.error(e);
+    }
 };
 
+// === دالة البحث في نافذة المبيعات ===
 function searchSalesProd(val) {
     const box = document.getElementById('sales-sug-list');
+    const input = document.getElementById('s-prod');
+    
+    // تنظيف النص
     const q = val ? val.trim().toLowerCase() : '';
 
     if (!q) {
@@ -2484,16 +3051,19 @@ function searchSalesProd(val) {
         return;
     }
 
+    // البحث في مصفوفة المنتجات المحملة (products)
+    // يبحث في (الاسم) و (الكود ID)
     const matches = products.filter(p => 
         (p.name && p.name.toLowerCase().includes(q)) || 
         (p.id && p.id.toLowerCase().includes(q))
-    ).slice(0, 10); 
+    ).slice(0, 10); // إظهار أول 10 نتائج فقط
 
     if (matches.length === 0) {
         box.style.display = 'none';
         return;
     }
 
+    // بناء قائمة الاقتراحات
     box.innerHTML = matches.map(p => `
         <div class="sug-item" 
              onclick="selectSalesProd('${escapeStr(p.name)}', '${p.price}', '${p.id}')" 
@@ -2509,15 +3079,22 @@ function searchSalesProd(val) {
     box.style.display = 'block';
 }
 
+// === دالة اختيار المنتج وتعبئة البيانات تلقائياً ===
 function selectSalesProd(name, price, id) {
+    // تعبئة اسم المنتج
     document.getElementById('s-prod').value = name;
+    
+    // تعبئة السعر تلقائياً (ميزة إضافية)
     const priceField = document.getElementById('s-price');
     if(priceField && price) {
         priceField.value = price;
     }
+
+    // إخفاء القائمة
     document.getElementById('sales-sug-list').style.display = 'none';
 }
 
+// إخفاء القائمة عند الضغط في أي مكان خارجها
 document.addEventListener('click', function(e) {
     const box = document.getElementById('sales-sug-list');
     const input = document.getElementById('s-prod');
@@ -2526,25 +3103,35 @@ document.addEventListener('click', function(e) {
     }
 });
 
+// دالة إخفاء الإشعار يدوياً
 function dismissNotification() {
     const bar = document.getElementById('sys-notification-bar');
     if (bar) {
+        // إزالة كلاس النشاط ليرتفع للأعلى
         bar.classList.remove('active-notify');
+        
+        // إخفاء العنصر تماماً بعد انتهاء الحركة (0.5 ثانية)
         setTimeout(() => {
             bar.style.display = 'none';
         }, 500);
     }
 }
-
+// =================================
+// 🖱️ إخفاء الاقتراحات عند الضغط خارج الحقل
+// ===================================
 document.addEventListener('click', function(e) {
     const searchInput = document.getElementById('main-search');
     const suggestBox = document.getElementById('sug-box');
+
+    // التأكد من وجود العناصر لتجنب الأخطاء
     if (!searchInput || !suggestBox) return;
+
+    // الشرط: هل الضغطة حدثت خارج الحقل وخارج الصندوق؟
     if (!searchInput.contains(e.target) && !suggestBox.contains(e.target)) {
         suggestBox.style.display = 'none';
     }
 });
-
+// دالة لحذف المبيعات المؤكدة من السيرفر
 window.deleteServerSale = function(docId) {
     Swal.fire({
         title: 'تأكيد الحذف',
@@ -2561,23 +3148,31 @@ window.deleteServerSale = function(docId) {
             .then(() => {
                 const Toast = Swal.mixin({toast: true, position: 'top-end', showConfirmButton: false, timer: 3000});
                 Toast.fire({icon: 'success', title: 'تم الحذف بنجاح'});
+            })
+            .catch((error) => {
+                Swal.fire('خطأ', error.message, 'error');
             });
         }
     });
 };
 
 // =============================
-// 🧠 نظام المساعد الذكي
+// 🧠 نظام المساعد الذكي للمبيعات (Gemini AI) - النسخة المصححة
 // ==============================
 
+// تعريف متغير لضمان عدم تداخل المقارنات
 window.compareProductId = null;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// 0️⃣ دالة الاتصال الذكية 
 window.fetchGeminiAPI = async function(prompt) {
     if (!window.aiConfig || !window.aiConfig.apiKey) {
         throw new Error("لم يتم إضافة مفتاح الـ API من لوحة التحكم.");
     }
+
     const apiKey = window.aiConfig.apiKey;
+
+    // 1. جلب قائمة الموديلات المتاحة
     let validModels = JSON.parse(sessionStorage.getItem('valid_gemini_models') || '[]');
 
     if (validModels.length === 0) {
@@ -2593,7 +3188,9 @@ window.fetchGeminiAPI = async function(prompt) {
                     sessionStorage.setItem('valid_gemini_models', JSON.stringify(validModels));
                 }
             }
-        } catch (e) {}
+        } catch (e) {
+            console.warn("فشل جلب قائمة الموديلات ديناميكياً.");
+        }
     }
 
     if (validModels.length === 0) {
@@ -2604,6 +3201,7 @@ window.fetchGeminiAPI = async function(prompt) {
     let modelsToTry = preferredOrder.filter(m => validModels.includes(m));
     if (modelsToTry.length === 0) modelsToTry = validModels;
 
+    // 4. دالة المحاولة للاتصال والتنقل التلقائي بين الموديلات في حالة الخطأ
     async function attemptFetch(retryIndex) {
         if (retryIndex >= modelsToTry.length) {
             throw new Error("سيرفرات الذكاء الاصطناعي عليها ضغط شديد حالياً. يرجى المحاولة بعد قليل ⏱️.");
@@ -2613,7 +3211,7 @@ window.fetchGeminiAPI = async function(prompt) {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${apiKey}`;
 
         const payload = {
-            contents:[{ parts: [{ text: prompt }] }],
+            contents: [{ parts: [{ text: prompt }] }],
             safetySettings:[
                 { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
                 { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
@@ -2630,11 +3228,16 @@ window.fetchGeminiAPI = async function(prompt) {
             });
             const data = await response.json();
 
+            // 🟢 2. التعديل الاحترافي لامتصاص الصدمات من سيرفرات جوجل
             if (!response.ok) {
                 const errorMsg = data.error?.message || "";
+                
                 if (errorMsg.includes("not found") || errorMsg.includes("high demand") || response.status === 404 || response.status === 503 || response.status === 429) {
-                    await sleep(1000); 
-                    return await attemptFetch(retryIndex + 1); 
+                    console.warn(`الموديل ${selectedModel} غير متاح أو عليه ضغط، ننتظر ثانية لتجنب الحظر ثم نجرب البديل...`);
+                    
+                    await sleep(1000); // ⏳ هنا يكمن السحر: إيقاف الكود لثانية واحدة
+                    
+                    return await attemptFetch(retryIndex + 1); // الانتقال للموديل الذي يليه بعد التأخير
                 }
                 throw new Error(errorMsg);
             }
@@ -2656,6 +3259,10 @@ window.fetchGeminiAPI = async function(prompt) {
     return await attemptFetch(0);
 };
 
+// ========================================================
+// 🧠 نظام المقارنة الذكي (تصميم احترافي + دعم ذكي للأكواد)
+// ========================================================
+
 window.aiCompareMenu = function(productId) {
     if (!window.aiConfig || !window.aiConfig.apiKey) {
         return Swal.fire('تنبيه', 'ميزة الذكاء الاصطناعي غير مفعلة. يرجى إضافة مفتاح API من لوحة التحكم.', 'warning');
@@ -2671,6 +3278,7 @@ window.aiCompareMenu = function(productId) {
         return;
     }
 
+    // عرض القائمة بتصميم الكروت الاحترافي (بدون أزرار SweetAlert الافتراضية)
     Swal.fire({
         title: '⚖️ اختار نوع المقارنة',
         html: `
@@ -2680,6 +3288,7 @@ window.aiCompareMenu = function(productId) {
      <h4>منتج من العربى</h4>
       <p>قارن بمنتج تاني من ماركات العربي الموجودة في التطبيق.</p>
                 </div>
+                
                 <div class="pro-comp-card external" onclick="Swal.close(); setTimeout(() => promptCompetitorCompare('${productId}'), 300)">
                     <div class="pro-comp-icon"><i class="fas fa-globe"></i></div>
                     <h4>منتج منافس (خارجي)</h4>
@@ -2766,6 +3375,7 @@ function executeCompetitorCompare(productId, competitorName) {
     const product = products.find(p => p.id === productId);
     if (!product) return;
 
+    // هنا السر: نوجه الذكاء الاصطناعي بشكل هندسي للتعامل مع "الأكواد"
     const productsInfo = `
 المنتج الأول (الخاص بنا - العربي):
 - الاسم: ${product.name || 'غير محدد'}
@@ -2773,7 +3383,7 @@ function executeCompetitorCompare(productId, competitorName) {
 - التفاصيل: ${product.details || 'لا يوجد'}
 
 المنتج الثاني (المنافس الخارجي في السوق):
-- المُدخل من المستخدم (قد يكون كود موديل أو اسم):[ ${competitorName} ]
+- المُدخل من المستخدم (قد يكون كود موديل أو اسم): [ ${competitorName} ]
 
 **تعليمات حاسمة للذكاء الاصطناعي:**
 1. المُدخل أعلاه للمنتج الثاني غالباً هو "كود موديل فني" (Model Number).
@@ -2824,7 +3434,9 @@ async function generateAndShowCompare(productsInfo, loadingMsg) {
         });
     }
 }
+// ========================================================
 
+// 2️⃣ دالة "اقنع العميل"
 window.aiPersuadeCustomer = async function(productId) {
     if (!window.aiConfig || !window.aiConfig.apiKey) {
         return Swal.fire('تنبيه', 'ميزة الذكاء الاصطناعي غير مفعلة. يرجى إضافة مفتاح API من لوحة التحكم أولاً.', 'warning');
@@ -2853,20 +3465,24 @@ window.aiPersuadeCustomer = async function(productId) {
         didOpen: () => { Swal.showLoading(); }
     });
 
+// 1. تجهيز بيانات المنتج لاستبدالها في الموجه
     const productInfo = `
 - اسم المنتج: ${product.name || 'غير محدد'}
 - السعر: ${product.price || 'غير محدد'}
 - القسم: ${product.category || 'غير محدد'}
 - التفاصيل: ${product.details || 'لا يوجد'}`;
 
+    // 2. جلب الموجه من السيرفر
     let prompt = window.aiConfig.promptConvince;
     if (!prompt) {
-        prompt = `أنت بياع مصري شاطر. أقنع الزبون يشتري المنتج ده:\n{product_data}\nأعطني النتيجة ككود HTML...`; 
+        prompt = `أنت بياع مصري شاطر. أقنع الزبون يشتري المنتج ده:\n{product_data}\nأعطني النتيجة ككود HTML...`; // احتياطي
     }
 
+    // 3. الاستبدال الذكي
     if (prompt.includes('{product_data}')) {
         prompt = prompt.replace('{product_data}', productInfo);
     } else {
+        // حماية إذا تم مسح الكلمة المفتاحية بالخطأ
         prompt += '\n\nبيانات المنتج:\n' + productInfo;
     }
 
@@ -2893,91 +3509,159 @@ window.aiPersuadeCustomer = async function(productId) {
     }
 };
 
+// سكريبت بسيط لإظهار وإخفاء كلمة المرور
 function togglePasswordVisibility() {
   const passInput = document.getElementById('login-pass');
   const eyeIcon = document.getElementById('eye-icon');
   
   if (passInput.type === 'password') {
     passInput.type = 'text';
+    // تغيير الأيقونة لـ (إخفاء)
     eyeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"></path>';
   } else {
     passInput.type = 'password';
+    // إعادة الأيقونة لـ (إظهار)
     eyeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>';
   }
 }
 
+// دالة تعليمية لشرح الأدوات داخل المزايا
 window.showToolGuide = function(tool) {
     let guideData = {
-        search: { title: "البحث الذكي", text: "يمكنك البحث بكود الموديل أو جزء من الاسم ويقوم بحفظ عمليات بحث قمت بها لتوفير وقتك.", icon: "info" },
-        ai: { title: "مساعد الذكاء الاصطناعي", text: "اضغط على 'اقنع العميل' ليقوم AI بتحليل مواصفات المنتج وإنشاء نص بيعي مقنع. أو 'قارن منتجين' لعمل جدول مقارنة احترافي فوراً.", icon: "info" },
-        sales: { title: "إدارة المبيعات", text: "سجل مبيعاتك اليومية من الزر العائم (📊). يمكنك حفظ المبيعات مؤقتاً عند ضعف الإنترنت، ثم رفعها جميعاً للسيرفر بضغطة واحدة.", icon: "success" },
-        cust: { title: "نظام تذكير العملاء", text: "عند تسجيل بيانات عميل، يمكنك ضبط وقت تذكير. التطبيق سيرسل لك إشعاراً (🔔) في الموعد المحدد.", icon: "info" }
+        search: {
+            title: "البحث الذكي",
+            text: "يمكنك البحث بكود الموديل أو جزء من الاسم ويقوم بحفظ عمليات بحث قمت بها لتوفير وقتك.",
+            icon: "info"
+        },
+        ai: {
+            title: "مساعد الذكاء الاصطناعي",
+            text: "اضغط على 'اقنع العميل' ليقوم AI بتحليل مواصفات المنتج وإنشاء نص بيعي مقنع. أو 'قارن منتجين' لعمل جدول مقارنة احترافي فوراً.",
+            icon: "info"
+        },
+        sales: {
+            title: "إدارة المبيعات",
+            text: "سجل مبيعاتك اليومية من الزر العائم (📊). يمكنك حفظ المبيعات مؤقتاً عند ضعف الإنترنت، ثم رفعها جميعاً للسيرفر بضغطة واحدة.",
+            icon: "success"
+        },
+        cust: {
+            title: "نظام تذكير العملاء",
+            text: "عند تسجيل بيانات عميل، يمكنك ضبط وقت تذكير. التطبيق سيرسل لك إشعاراً (🔔) في الموعد المحدد حتى لو كنت تتصفح منتجاً آخر.",
+            icon: "info"
+        }
     };
 
     const info = guideData[tool];
+
     Swal.fire({
         title: info.title,
         text: info.text,
         icon: info.icon,
         confirmButtonText: "فهمت",
         confirmButtonColor: "#3b82f6",
-        target: document.getElementById('tourModal') 
+        target: document.getElementById('tourModal') // لضمان ظهور التنبيه فوق المودال
     });
 };
 
+// ================================
+// 🚀 تسجيل Service Worker للعمل في الخلفية
+// =================================
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
         navigator.serviceWorker.register('/sw.js')
-        .then(function(registration) { console.log('تم تسجيل Service Worker بنجاح بنطاق: ', registration.scope); }, function(err) {});
+        .then(function(registration) {
+            console.log('تم تسجيل Service Worker بنجاح بنطاق: ', registration.scope);
+        }, function(err) {
+            console.log('فشل تسجيل Service Worker: ', err);
+        });
     });
 }
-
+// دالة تفاعل الألوان الجديدة (إضافة حالة النشاط وتغيير الصورة)
 window.handleModernColorClick = function(pid, src, element) {
     const colorWrapper = document.getElementById(`color-wrap-${pid}`);
     if (colorWrapper) {
         colorWrapper.querySelectorAll('.modern-swatch').forEach(el => el.classList.remove('active'));
     }
+    
     element.classList.add('active');
-    if (src && src !== 'undefined') window.focusColor(pid, src);
+    
+    if (src && src !== 'undefined') {
+        window.focusColor(pid, src);
+    }
 };
+// =========================
+// 🛡️ نظام الحماية المتقدم ضد السكرين شوت والسرقة
+// ========================
 
 (function() {
+    // 1. تدمير محاولة استخدام زر Print Screen
     document.addEventListener("keyup", function (e) {
         if (e.key === "PrintScreen" || e.keyCode === 44) {
+            // تفريغ الحافظة فوراً
             navigator.clipboard.writeText('عذراً، غير مسموح بنسخ محتوى هذا التطبيق ©');
+            // إخفاء المحتوى لحظياً لإفساد اللقطة
             document.body.style.opacity = '0';
             Swal.fire({
-                icon: 'error', title: 'تنبيه أمني', text: 'غير مسموح بأخذ لقطة شاشة لحماية حقوق الملكية!', confirmButtonText: 'حسناً'
-            }).then(() => { document.body.style.opacity = '1'; });
+                icon: 'error',
+                title: 'تنبيه أمني',
+                text: 'غير مسموح بأخذ لقطة شاشة لحماية حقوق الملكية!',
+                confirmButtonText: 'حسناً'
+            }).then(() => {
+                document.body.style.opacity = '1';
+            });
         }
     });
 
+
+    // 3. فخ المطورين (Debugger Loop Trap)
+    // هذا الكود يوقف المتصفح تماماً إذا نجح السارق في فتح DevTools
     setInterval(function() {
         const before = new Date().getTime();
-        debugger; 
+        debugger; // إذا كان الـ DevTools مفتوحاً سيقف هنا
         const after = new Date().getTime();
         if (after - before > 100) {
+            // تم اكتشاف أن الـ DevTools مفتوح!
             document.body.innerHTML = "<h1 style='color:red; text-align:center; margin-top:20%;'>تم اكتشاف محاولة اختراق!</h1>";
             window.location.replace("https://www.google.com");
         }
     }, 1000);
 
+    // 4. منع تحديد النصوص تماماً (لمنع النسخ اليدوي)
     const css = document.createElement('style');
-    css.innerHTML = `* { -webkit-user-select: none !important; -moz-user-select: none !important; -ms-user-select: none !important; user-select: none !important; -webkit-touch-callout: none !important; }`;
+    css.innerHTML = `
+        * {
+            -webkit-user-select: none !important;
+            -moz-user-select: none !important;
+            -ms-user-select: none !important;
+            user-select: none !important;
+            -webkit-touch-callout: none !important;
+        }
+    `;
     document.head.appendChild(css);
-})();
 
+})();
+// ============================
+// منطق تشغيل الشريط الجانبي والقوائم الفرعية (مع حفظ المكان في الذاكرة)
+// ==============================
 const edgeHandle = document.getElementById('edgeHandle');
 const edgeSidebar = document.getElementById('edgeSidebar');
 
+// دالة فتح/إغلاق القوائم الفرعية
 window.toggleEdgeSub = function(subId, btnElement) {
-    document.querySelectorAll('.edge-sub-menu').forEach(menu => { if (menu.id !== subId) menu.classList.remove('open'); });
-    document.querySelectorAll('.edge-item').forEach(item => { if (item !== btnElement) item.classList.remove('active'); });
+    document.querySelectorAll('.edge-sub-menu').forEach(menu => {
+        if (menu.id !== subId) menu.classList.remove('open');
+    });
+    document.querySelectorAll('.edge-item').forEach(item => {
+        if (item !== btnElement) item.classList.remove('active');
+    });
 
     const targetMenu = document.getElementById(subId);
-    if (targetMenu) { targetMenu.classList.toggle('open'); btnElement.classList.toggle('active'); }
+    if (targetMenu) {
+        targetMenu.classList.toggle('open');
+        btnElement.classList.toggle('active');
+    }
 };
 
+// دالة إغلاق الشريط بالكامل
 window.closeEdgeSidebar = function() {
     if (edgeSidebar) edgeSidebar.classList.remove('open');
     document.querySelectorAll('.edge-sub-menu').forEach(menu => menu.classList.remove('open'));
@@ -2985,49 +3669,82 @@ window.closeEdgeSidebar = function() {
 };
 
 if (edgeHandle && edgeSidebar) {
+    // ----------------------------------------------------
+    // 💾 استرجاع المكان المحفوظ من الذاكرة عند تحميل الصفحة
+    // ----------------------------------------------------
     const savedEdgePos = localStorage.getItem('edge_sidebar_pos');
     if (savedEdgePos) {
         let topVal = parseInt(savedEdgePos);
+        // حماية: التأكد أن المكان المحفوظ لا يخرج عن حدود الشاشة (في حال تدوير الهاتف)
         if (topVal > window.innerHeight - 80) topVal = window.innerHeight - 80;
         if (topVal < 80) topVal = 80;
+        
         const safePos = topVal + 'px';
         edgeHandle.style.top = safePos;
         edgeSidebar.style.top = safePos;
     }
 
-    let isDragging = false, hasMoved = false, startY = 0, startX = 0, startTop = 0;
+// --------------------------------
+    // 🚀 منطق السحب الحر الذكي (مُحسن ومُسرّع بدون أي بطء)
+    // --------------------------------
+    let isDragging = false;
+    let hasMoved = false; 
+    let startY = 0;
+    let startX = 0;
+    let startTop = 0;
 
     function startDrag(e) {
-        isDragging = true; hasMoved = false;
+        isDragging = true;
+        hasMoved = false;
+        
         startY = e.type.includes('mouse') ? e.clientY : e.touches[0].clientY;
         startX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
+        
         startTop = edgeHandle.offsetTop; 
         
+        // 💡 الحل السحري للبطء: إيقاف الأنيميشن (Transitions) تماماً عن كل العناصر أثناء السحب
         edgeHandle.style.transition = 'none';
         edgeSidebar.style.transition = 'none'; 
         
         const hintBox = document.getElementById('edge-smart-hint');
-        if (hintBox) { hintBox.style.transition = 'none'; hintBox.classList.remove('show-hint'); edgeHandle.classList.remove('hint-active'); }
+        if (hintBox) {
+            hintBox.style.transition = 'none'; // إيقاف أنيميشن السهم أيضاً
+            hintBox.classList.remove('show-hint');
+            edgeHandle.classList.remove('hint-active');
+        }
     }
 
     function doDrag(e) {
         if (!isDragging) return;
+        
         let currentY = e.type.includes('mouse') ? e.clientY : e.touches[0].clientY;
         let currentX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
-        let diffY = currentY - startY, absY = Math.abs(diffY), absX = Math.abs(currentX - startX);
+        
+        let diffY = currentY - startY;
+        let absY = Math.abs(diffY);
+        let absX = Math.abs(currentX - startX);
         
         if (!hasMoved) {
-            if (absX > 10 && absX > absY) { isDragging = false; return; }
-            if (absY > 10) hasMoved = true;
+            if (absX > 10 && absX > absY) {
+                isDragging = false; 
+                return;
+            }
+            if (absY > 10) {
+                hasMoved = true;
+            }
         }
 
         if (hasMoved) {
             if (e.cancelable) e.preventDefault(); 
+
             let newTop = startTop + diffY;
+
             if (newTop < 80) newTop = 80; 
             if (newTop > window.innerHeight - 80) newTop = window.innerHeight - 80; 
+            
             let newTopPx = newTop + 'px';
 
+            // تحريك العناصر فوراً وبدون أي مقاومة
             edgeHandle.style.top = newTopPx;
             edgeSidebar.style.top = newTopPx;
             
@@ -3038,15 +3755,20 @@ if (edgeHandle && edgeSidebar) {
 
     function endDrag(e) {
         isDragging = false;
+        
+        // 💡 إعادة الأنيميشن (Transitions) بعد إفلات الزر لتعمل الحركات والفتح والإغلاق بسلاسة
         edgeHandle.style.transition = 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
         edgeSidebar.style.transition = 'right 0.4s cubic-bezier(0.25, 0.8, 0.25, 1)';
         
         const hintBox = document.getElementById('edge-smart-hint');
         if (hintBox) hintBox.style.transition = 'all 0.6s cubic-bezier(0.68, -0.55, 0.27, 1.55)';
 
+        // 💾 حفظ المكان النهائي في ذاكرة المتصفح
         if (hasMoved) {
             const finalTop = edgeHandle.style.top;
-            if (finalTop) localStorage.setItem('edge_sidebar_pos', finalTop);
+            if (finalTop) {
+                localStorage.setItem('edge_sidebar_pos', finalTop);
+            }
         }
     }
 
@@ -3058,22 +3780,34 @@ if (edgeHandle && edgeSidebar) {
     document.addEventListener('touchmove', doDrag, { passive: false });
     document.addEventListener('touchend', endDrag);
 
+    // ---------------------------
+    // 🖱️ منطق النقر العادي
+    // -----------------------------
     edgeHandle.addEventListener('click', function(e) {
         e.stopPropagation();
-        if (hasMoved) { hasMoved = false; return; }
+        if (hasMoved) {
+            hasMoved = false;
+            return; 
+        }
         edgeSidebar.classList.toggle('open');
         if (!edgeSidebar.classList.contains('open')) closeEdgeSidebar(); 
     });
 
     document.addEventListener('click', function(e) {
-        if (!edgeSidebar.contains(e.target) && !edgeHandle.contains(e.target)) closeEdgeSidebar();
+        if (!edgeSidebar.contains(e.target) && !edgeHandle.contains(e.target)) {
+            closeEdgeSidebar();
+        }
     });
 }
 
+// ==================================
+// 🔔 دالة إظهار إشعار القائمة الجانبية الذكي (تعمل مرة واحدة فقط)
+// =================================
 window.triggerEdgeMenuHint = function() {
     const lockScreen = document.getElementById('app-lock-screen');
     if (lockScreen && lockScreen.style.display === 'flex') return;
 
+    // 💡 التعديل: التحقق مما إذا كان المستخدم قد رأى الإشعار بالفعل في هذه الجلسة
     if (localStorage.getItem('edge_hint_seen') === 'true') return;
 
     const handle = document.getElementById('edgeHandle');
@@ -3086,8 +3820,11 @@ window.triggerEdgeMenuHint = function() {
         hintBox.className = 'edge-hint-tooltip';
         hintBox.innerHTML = `<span>اطلع على قائمه الادوات من هنا</span> <i class="fa-solid fa-arrow-right fa-beat-fade" style="font-size:10px;"></i>`;
         
+        // 💾 ضبط مكان الإشعار بناءً على مكان الزر المحفوظ في الذاكرة
         const savedEdgePos = localStorage.getItem('edge_sidebar_pos');
-        if (savedEdgePos) hintBox.style.top = savedEdgePos;
+        if (savedEdgePos) {
+            hintBox.style.top = savedEdgePos;
+        }
 
         document.body.appendChild(hintBox);
     }
@@ -3095,7 +3832,9 @@ window.triggerEdgeMenuHint = function() {
     setTimeout(() => {
         hintBox.classList.add('show-hint');
         handle.classList.add('hint-active');
+        
         localStorage.setItem('edge_hint_seen', 'true');
+
         setTimeout(() => {
             hintBox.classList.remove('show-hint');
             handle.classList.remove('hint-active');
@@ -3103,8 +3842,15 @@ window.triggerEdgeMenuHint = function() {
     }, 2000); 
 };
 
+
+// أ) تشغيل عند إعادة تحميل الصفحة (إذا كان مسجلاً للدخول بالفعل)
 document.addEventListener("DOMContentLoaded", () => {
     const savedDocId = localStorage.getItem('seller_doc_id'); 
-    if (savedDocId) triggerEdgeMenuHint();
+    if (savedDocId) {
+        triggerEdgeMenuHint();
+    }
 });
-//]]>
+// triggerEdgeMenuHint(); 
+      //]]>
+      
+    
