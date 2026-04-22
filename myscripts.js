@@ -1518,75 +1518,76 @@ window.updateSelectAllUI = function() {
     }
 };
 
-// ==========================================
-// دالة حذف المحدد (الحذف المتعدد) - نسخة مصححة 100%
-// ==========================================
+// ===================================
+// 1. دالة حذف المربعات المحددة (الحذف المتعدد) - نسخة مستقرة 100%
+// ====================================
 window.deleteSelectedCustomers = async function() {
-    // 1. جلب كافة المربعات المختارة
+    // جلب كافة المربعات المحددة
     const checkedBoxes = document.querySelectorAll('.cust-checkbox:checked');
     
-    // 2. تحويلها لمصفوفة من المعرفات (IDs)
-    const idsToDelete = Array.from(checkedBoxes).map(cb => cb.value);
+    // تحويل العناصر المحددة إلى مصفوفة من المعرفات IDs
+    let idsToDelete = [];
+    checkedBoxes.forEach(function(box) {
+        idsToDelete.push(box.value);
+    });
 
-    // 3. التحقق إذا كان المستخدم لم يختار أي شيء
+    // إذا لم يتم اختيار أي عميل
     if (idsToDelete.length === 0) {
         Swal.fire({
             icon: 'info',
             title: 'تنبيه',
             text: 'من فضلك اختر عميل واحد على الأقل لحذفه.',
-            confirmButtonText: 'حسناً'
+            confirmButtonText: 'حسناً',
+            customClass: { popup: 'ai-swal-popup' }
         });
         return;
     }
 
-    // 4. رسالة التأكيد
+    // رسالة التأكيد (بدون رابط الموقع)
     Swal.fire({
         title: `حذف ${idsToDelete.length} عميل؟`,
-        text: "هل أنت متأكد؟ سيتم حذف العملاء المحددين نهائياً من السيرفر ولا يمكن التراجع!",
+        text: "هل أنت متأكد؟ سيتم حذف العملاء المحددين نهائياً من السيرفر.",
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#ef4444',
         cancelButtonColor: '#6c757d',
-        confirmButtonText: 'نعم، احذفهم الآن',
+        confirmButtonText: 'نعم، احذفهم',
         cancelButtonText: 'إلغاء',
         customClass: { popup: 'ai-swal-popup' }
     }).then(async (result) => {
         if (result.isConfirmed) {
-            // إظهار مؤشر تحميل
+            // إظهار مؤشر التحميل
             Swal.fire({
                 title: 'جاري الحذف...',
-                html: 'يرجى الانتظار قليلاً',
                 allowOutsideClick: false,
                 didOpen: () => { Swal.showLoading(); }
             });
 
             try {
-                // استخدام نظام الـ Batch لحذف عدة وثائق في طلب واحد (أسرع وأضمن)
+                // استخدام نظام الـ Batch لحذف عدة مستندات في طلب واحد (أسرع وأضمن)
                 const batch = db.batch();
                 
                 idsToDelete.forEach(docId => {
                     const docRef = db.collection('seller_customers').doc(docId);
                     batch.delete(docRef);
                     
-                    // إلغاء منبه الأندرويد لكل عميل إن وجد
+                    // إلغاء منبه الأندرويد إن وجد
                     if (window.AndroidBridge && typeof window.AndroidBridge.cancelReminder === "function") {
                         window.AndroidBridge.cancelReminder(docId);
                     }
                 });
 
-                // تنفيذ عملية الحذف الجماعي
                 await batch.commit();
 
-                // إغلاق مؤشر التحميل وإظهار نجاح العملية
                 Swal.fire({
                     icon: 'success',
                     title: 'تم الحذف بنجاح',
-                    text: `تم مسح ${idsToDelete.length} سجل من السيرفر.`,
+                    text: `تم مسح ${idsToDelete.length} سجل بنجاح.`,
                     timer: 2000,
                     showConfirmButton: false
                 });
 
-                // الخروج من وضع الحذف المتعدد وإخفاء المربعات
+                // الخروج من وضع الحذف المتعدد وتحديث الواجهة
                 if (typeof window.exitBulkDeleteMode === "function") {
                     window.exitBulkDeleteMode();
                 }
@@ -1596,7 +1597,7 @@ window.deleteSelectedCustomers = async function() {
                 Swal.fire({
                     icon: 'error',
                     title: 'فشل الحذف',
-                    text: 'حدث خطأ أثناء الاتصال بالسيرفر: ' + error.message
+                    text: 'حدث خطأ في السيرفر: ' + error.message
                 });
             }
         }
@@ -1656,9 +1657,9 @@ window.renderHistory = function() {
         });
 };
 
-// ==========================================
-// 3. دالة حذف عميل فردي (تعمل 100%)
-// ==========================================
+// ===================================
+// 2. دالة حذف عميل فردي (بدون ظهور رابط الموقع)
+// ===================================
 window.deleteCloudRecord = function(docId) {
     Swal.fire({
         title: 'تأكيد الحذف',
@@ -1676,7 +1677,7 @@ window.deleteCloudRecord = function(docId) {
             try {
                 await db.collection('seller_customers').doc(docId).delete();
                 // تنظيف منبه الأندرويد
-                if (window.AndroidBridge && window.AndroidBridge.cancelReminder) {
+                if (window.AndroidBridge && typeof window.AndroidBridge.cancelReminder === "function") {
                     window.AndroidBridge.cancelReminder(docId);
                 }
                 Swal.fire({ icon: 'success', title: 'تم الحذف بنجاح', timer: 1500, showConfirmButton: false });
@@ -1978,53 +1979,38 @@ window.removeFromUnsent = function(localId) {
     updateSalesUI();
 };
 
-// حذف من السجل المرسل (يحذف من السيرفر)
+// ==========================================
+// 1. دالة حذف عملية المبيعات (بدون ظهور رابط الموقع)
+// ==========================================
 window.deleteSaleEntry = async function(localId) {
-    if(!confirm("حذف هذه العملية من السجل والسيرفر؟")) return;
-    
-    let history = safeParseJSON('elaraby_sales_v3',[]);
-    const item = history.find(i => i.localId === localId);
-    
-    if(item && item.firestoreId && navigator.onLine) {
-        await db.collection("sales_transactions").doc(item.firestoreId).delete().catch(console.error);
-    }
-    
-    history = history.filter(i => i.localId !== localId);
-    localStorage.setItem('elaraby_sales_v3', JSON.stringify(history));
-    updateSalesUI();
+    Swal.fire({
+        title: 'تأكيد الحذف',
+        text: 'هل تريد حذف هذه العملية من السجل والسيرفر نهائياً؟',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'نعم، احذف',
+        cancelButtonText: 'إلغاء',
+        customClass: { popup: 'ai-swal-popup' }
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            let history = safeParseJSON('elaraby_sales_v3',[]);
+            const item = history.find(i => i.localId === localId);
+            
+            if(item && item.firestoreId && navigator.onLine) {
+                await db.collection("sales_transactions").doc(item.firestoreId).delete().catch(console.error);
+            }
+            
+            history = history.filter(i => i.localId !== localId);
+            localStorage.setItem('elaraby_sales_v3', JSON.stringify(history));
+            updateSalesUI();
+            
+            Swal.fire({ icon: 'success', title: 'تم الحذف بنجاح', timer: 1500, showConfirmButton: false });
+        }
+    });
 };
 
-window.downloadSalesCSV = function() {
-    const s = safeParseJSON('elaraby_sales_v3',[]);
-
-    if (s.length === 0) {
-        Swal.fire('تنبيه', 'لا توجد بيانات محفوظة محلياً للتحميل', 'info');
-        return;
-    }
-
-    // إضافة عمود العدد والإجمالي
-    let csvContent = "\uFEFFالفرع,المنتج,العدد,سعر الوحدة,الإجمالي,التاريخ\n";
-
-    csvContent += s.map(item => {
-        const branch = item.branch ? `"${item.branch.replace(/"/g, '""')}"` : '"-"';
-        const product = item.product ? `"${item.product.replace(/"/g, '""')}"` : '"-"';
-        const price = Number(item.price) || 0;
-        const qty = Number(item.qty) || 1;
-        const total = price * qty;
-        const date = item.date || "-";
-
-        return `${branch},${product},${qty},${price},${total},${date}`;
-    }).join("\n");
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", `مبيعات_${new Date().toISOString().slice(0,10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-};
       
 // Sales Tooltip Animation 
       document.addEventListener('DOMContentLoaded', function() {
