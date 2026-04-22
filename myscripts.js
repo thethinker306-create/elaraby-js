@@ -1572,28 +1572,31 @@ window.deleteSelectedCustomers = async function() {
     });
 };
 
-// ==================================
-// 1. دالة حذف عميل واحد (بتصميم احترافي مبسط)
-// ==================================
+// ==========================================
+// 1. دالة حذف عميل واحد (بتصميم احترافي بدون روابط)
+// ==========================================
 window.deleteCloudRecord = async function(docId) {
+    // استخدام SweetAlert بدلاً من confirm الافتراضي لمنع ظهور الرابط
     Swal.fire({
-        title: 'هل أنت متأكد من الحذف؟',
+        title: 'تأكيد الحذف',
+        text: 'هل أنت متأكد من حذف هذا العميل؟',
         icon: 'warning',
         showCancelButton: true,
-        confirmButtonColor: '#ef4444', // لون أحمر يعبر عن الحذف
-        cancelButtonColor: '#3b82f6',
-        confirmButtonText: 'تأكيد',
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'نعم، احذف',
         cancelButtonText: 'إلغاء',
-        customClass: { popup: 'ai-swal-popup' } // لتوحيد التصميم مع باقي التطبيق
+        customClass: { popup: 'ai-swal-popup' }
     }).then(async (result) => {
         if (result.isConfirmed) {
+            Swal.fire({ title: 'جاري الحذف...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
             try {
                 await db.collection('seller_customers').doc(docId).delete();
                 // إلغاء المنبه من الأندرويد إن وجد
                 if (window.AndroidBridge && window.AndroidBridge.cancelReminder) {
                     window.AndroidBridge.cancelReminder(docId);
                 }
-                // يتم التحديث تلقائياً عبر onSnapshot
+                Swal.fire({ icon: 'success', title: 'تم الحذف', timer: 1500, showConfirmButton: false });
             } catch(e) {
                 Swal.fire('خطأ', 'لم يتم الحذف: ' + e.message, 'error');
             }
