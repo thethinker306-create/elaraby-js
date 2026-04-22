@@ -1509,114 +1509,89 @@ window.renderHistory = function() {
 };
 
 
-// ====================================
-// 🚀 نظام إدارة العملاء الشامل (الحذف الفردي والمتعدد)
-// ===================================
+// ==============================
+// 🚀 نظام إدارة العملاء المطور (إصلاح الحذف المتعدد والفردي)
+// ==============================
 
-// 1. الدخول لوضع الحذف المتعدد (إظهار المربعات)
+// 1. تفعيل وضع التحديد للحذف
 window.enterBulkDeleteMode = function() {
     const defaultBar = document.getElementById('defaultActionBtns');
     const bulkBar = document.getElementById('bulkActionBtns');
     const table = document.getElementById('customersTable');
-
     if(defaultBar) defaultBar.style.display = 'none';
     if(bulkBar) bulkBar.style.display = 'flex';
     if(table) table.classList.add('bulk-active');
 };
 
-// 2. الخروج من وضع الحذف المتعدد (إخفاء المربعات)
+// 2. إلغاء وضع التحديد
 window.exitBulkDeleteMode = function() {
     const defaultBar = document.getElementById('defaultActionBtns');
     const bulkBar = document.getElementById('bulkActionBtns');
     const table = document.getElementById('customersTable');
-
     if(defaultBar) defaultBar.style.display = 'block';
     if(bulkBar) bulkBar.style.display = 'none';
     if(table) table.classList.remove('bulk-active');
-
-    // إلغاء تحديد كل المربعات عند الخروج
+    
+    // إلغاء تحديد المربعات
     const selectAllBtn = document.getElementById('selectAllCust');
     if(selectAllBtn) selectAllBtn.checked = false;
     document.querySelectorAll('.cust-checkbox').forEach(cb => cb.checked = false);
 };
 
-// 3. تحديد أو إلغاء تحديد الكل
+// 3. تحديد/إلغاء الكل
 window.toggleAllCustomers = function(source) {
     const checkboxes = document.querySelectorAll('.cust-checkbox');
     checkboxes.forEach(cb => cb.checked = source.checked);
 };
 
-// 4. تحديث حالة زر "تحديد الكل" عند الضغط على مربع واحد
+// 4. تحديث حالة زر "تحديد الكل"
 window.updateSelectAllUI = function() {
     const allBoxes = document.querySelectorAll('.cust-checkbox');
     const checkedBoxes = document.querySelectorAll('.cust-checkbox:checked');
     const selectAll = document.getElementById('selectAllCust');
-    if(selectAll && allBoxes.length > 0) {
-        selectAll.checked = (allBoxes.length === checkedBoxes.length);
-    }
+    if(selectAll) selectAll.checked = (allBoxes.length > 0 && allBoxes.length === checkedBoxes.length);
 };
 
-// 5. دالة الحذف المتعدد (للمربعات المحددة) بصيغة احترافية بدون رابط
+// 5. تنفيذ الحذف المتعدد (بدون روابط في الرسالة)
 window.deleteSelectedCustomers = async function() {
     const checkedBoxes = document.querySelectorAll('.cust-checkbox:checked');
-    let idsToDelete =[];
-    
-    for (let i = 0; i < checkedBoxes.length; i++) {
-        idsToDelete.push(checkedBoxes[i].value);
+    const idsToDelete = Array.from(checkedBoxes).map(box => box.value);
+
+    if (idsToDelete.length === 0) {
+        Swal.fire({ icon: 'info', title: 'تنبيه', text: 'يرجى تحديد عميل واحد على الأقل.' });
+        return;
     }
 
-
     Swal.fire({
-        title: `حذف ${idsToDelete.length} عملاء؟`,
-        text: "هل أنت متأكد؟ سيتم حذف العملاء المحددين نهائياً.",
+        title: `حذف ${idsToDelete.length} سجل؟`,
+        text: "هل أنت متأكد؟ لا يمكن استعادة البيانات بعد الحذف.",
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#ef4444',
         cancelButtonColor: '#6c757d',
-        confirmButtonText: '<i class="fa-solid fa-trash"></i> نعم، احذفهم',
-        cancelButtonText: 'إلغاء',
+        confirmButtonText: 'نعم، احذف الكل',
+        cancelButtonText: 'تراجع',
         customClass: { popup: 'ai-swal-popup' }
     }).then(async (result) => {
         if (result.isConfirmed) {
-            Swal.fire({
-                title: 'جاري الحذف...',
-                allowOutsideClick: false,
-                didOpen: () => { Swal.showLoading(); }
-            });
-
+            Swal.fire({ title: 'جاري الحذف...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
             try {
                 const batch = db.batch();
-                idsToDelete.forEach(docId => {
-                    const docRef = db.collection('seller_customers').doc(docId);
-                    batch.delete(docRef);
-                    
-                    // إلغاء منبه الأندرويد إن وجد
-                    if (window.AndroidBridge && typeof window.AndroidBridge.cancelReminder === "function") {
-                        window.AndroidBridge.cancelReminder(docId);
-                    }
+                idsToDelete.forEach(id => {
+                    batch.delete(db.collection('seller_customers').doc(id));
+                    if (window.AndroidBridge && window.AndroidBridge.cancelReminder) window.AndroidBridge.cancelReminder(id);
                 });
-
                 await batch.commit();
-
-                Swal.fire({
-                    icon: 'success',
-                    title: 'تم الحذف بنجاح',
-                    text: `تم مسح ${idsToDelete.length} سجل بنجاح.`,
-                    timer: 2000,
-                    showConfirmButton: false
-                });
-
+                Swal.fire({ icon: 'success', title: 'تم الحذف بنجاح', timer: 1500, showConfirmButton: false });
                 window.exitBulkDeleteMode();
-
             } catch (error) {
-                console.error("Bulk Delete Error:", error);
                 Swal.fire({ icon: 'error', title: 'فشل الحذف', text: error.message });
             }
         }
     });
 };
 
-// 6. دالة الحذف الفردي للعميل (بدون ظهور رابط الموقع إطلاقاً)
+// 6. الحذف الفردي (بدون روابط في الرسالة)
 window.deleteCloudRecord = function(docId) {
     Swal.fire({
         title: 'تأكيد الحذف',
@@ -1624,21 +1599,17 @@ window.deleteCloudRecord = function(docId) {
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#ef4444',
-        cancelButtonColor: '#6c757d',
-        confirmButtonText: '<i class="fa-solid fa-trash"></i> نعم، احذف',
+        confirmButtonText: 'نعم، احذف',
         cancelButtonText: 'إلغاء',
         customClass: { popup: 'ai-swal-popup' }
     }).then(async (result) => {
         if (result.isConfirmed) {
-            Swal.fire({ title: 'جاري الحذف...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
             try {
                 await db.collection('seller_customers').doc(docId).delete();
-                if (window.AndroidBridge && typeof window.AndroidBridge.cancelReminder === "function") {
-                    window.AndroidBridge.cancelReminder(docId);
-                }
-                Swal.fire({ icon: 'success', title: 'تم الحذف بنجاح', timer: 1500, showConfirmButton: false });
+                if (window.AndroidBridge && window.AndroidBridge.cancelReminder) window.AndroidBridge.cancelReminder(docId);
+                Swal.fire({ icon: 'success', title: 'تم الحذف', timer: 1000, showConfirmButton: false });
             } catch(e) {
-                Swal.fire('خطأ', 'حدث خطأ أثناء الحذف: ' + e.message, 'error');
+                Swal.fire('خطأ', 'حدث مشكلة أثناء الحذف', 'error');
             }
         }
     });
