@@ -1,5 +1,4 @@
-
-      //<![CDATA[
+  //<![CDATA[
       (function(){
   // قائمة النطاقات المسموح بها 
   var allowedDomains = ["elaraby-products.blogspot.com", "localhost"]; 
@@ -3818,7 +3817,6 @@ document.addEventListener("DOMContentLoaded", () => {
         triggerEdgeMenuHint();
     }
 });
-// triggerEdgeMenuHint(); 
       //]]>
       
     
