@@ -1469,44 +1469,7 @@ window.exitBulkDeleteMode = function() {
     checkboxes.forEach(cb => cb.checked = false);
 };
 
-// ==========================================
-// 1. نظام الحذف المتعدد (Bulk Delete System)
-// ==========================================
 
-// دخول وضع الحذف (إظهار المربعات)
-window.enterBulkDeleteMode = function() {
-    const defaultBar = document.getElementById('defaultActionBtns');
-    const bulkBar = document.getElementById('bulkActionBtns');
-    const table = document.getElementById('customersTable');
-    
-    if(defaultBar) defaultBar.style.display = 'none';
-    if(bulkBar) bulkBar.style.display = 'flex';
-    if(table) table.classList.add('bulk-active');
-};
-
-// الخروج من وضع الحذف (إخفاء المربعات)
-window.exitBulkDeleteMode = function() {
-    const defaultBar = document.getElementById('defaultActionBtns');
-    const bulkBar = document.getElementById('bulkActionBtns');
-    const table = document.getElementById('customersTable');
-    
-    if(defaultBar) defaultBar.style.display = 'block';
-    if(bulkBar) bulkBar.style.display = 'none';
-    if(table) table.classList.remove('bulk-active');
-    
-    // إلغاء تحديد كل المربعات
-    const selectAllBtn = document.getElementById('selectAllCust');
-    if(selectAllBtn) selectAllBtn.checked = false;
-    document.querySelectorAll('.cust-checkbox').forEach(cb => cb.checked = false);
-};
-
-// تحديد أو إلغاء تحديد الكل
-window.toggleAllCustomers = function(source) {
-    const checkboxes = document.querySelectorAll('.cust-checkbox');
-    checkboxes.forEach(cb => {
-        cb.checked = source.checked;
-    });
-};
 
 // تحديث حالة "تحديد الكل" عند ضغط مربعات فردية
 window.updateSelectAllUI = function() {
