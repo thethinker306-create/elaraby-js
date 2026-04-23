@@ -1,5 +1,4 @@
-  //<![CDATA[
-      
+
       // إعدادات الكاش والتهيئة
       const CACHE_KEY = 'elaraby_products_cache_v4'; 
       const CACHE_TIME_KEY = 'elaraby_cache_time';
@@ -3699,7 +3698,3 @@ document.addEventListener("DOMContentLoaded", () => {
     if (savedDocId) {
         triggerEdgeMenuHint();
     }
-});
-// triggerEdgeMenuHint(); 
-      //]]>
-      
