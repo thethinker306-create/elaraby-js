@@ -1,4 +1,4 @@
-
+alert("الجافاسكريبت يعمل!");
       // إعدادات الكاش والتهيئة
       const CACHE_KEY = 'elaraby_products_cache_v6'; 
       const CACHE_TIME_KEY = 'elaraby_cache_time';
