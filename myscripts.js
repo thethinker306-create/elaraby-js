@@ -1,9 +1,8 @@
-
-      //<![CDATA[
+  //<![CDATA[
       (function(){
   // قائمة النطاقات المسموح بها 
   var allowedDomains = ["elaraby-products.blogspot.com", "localhost"]; 
-  var isAllowed = false;
+  var isAllowed = true;
   var currentDomain = window.location.hostname;
 
   for(var i=0; i<allowedDomains.length; i++){
@@ -25,7 +24,7 @@
   }
 })();
       // إعدادات الكاش والتهيئة
-      const CACHE_KEY = 'elaraby_products_cache_v3'; 
+      const CACHE_KEY = 'elaraby_products_cache_v4'; 
       const CACHE_TIME_KEY = 'elaraby_cache_time';
       const RECENT_SEARCH_KEY = "elaraby_recent_searches";
       // متغيرات النظام
