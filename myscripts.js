@@ -1,21 +1,17 @@
- //<![CDATA[
+
+      //<![CDATA[
       (function(){
   // قائمة النطاقات المسموح بها 
-  var allowedDomains = ["elaraby-products.blogspot.com", "localhost"];
-    var isAllowed = true;
-    var currentDomain = window.location.hostname || ""; // أضفت "" لدعم الأندرويد
+  var allowedDomains = ["elaraby-products.blogspot.com", "localhost"]; 
+  var isAllowed = false;
+  var currentDomain = window.location.hostname;
 
-    // إذا كان يعمل على الأندرويد أو النطاق مسموح به
-    if (currentDomain === "" || window.location.protocol === "file:") {
-        isAllowed = true;
-    } else {
-        for (var i = 0; i < allowedDomains.length; i++) {
-            if (currentDomain.includes(allowedDomains[i])) {
-                isAllowed = true;
-                break;
-            }
-        }
+  for(var i=0; i<allowedDomains.length; i++){
+    if(currentDomain.includes(allowedDomains[i])){
+      isAllowed = true;
+      break;
     }
+  }
 
   if(!isAllowed){
     // العقوبة: مسح محتوى الصفحة بالكامل وتوجيه المستخدم لموقعك الأصلي
@@ -29,7 +25,7 @@
   }
 })();
       // إعدادات الكاش والتهيئة
-      const CACHE_KEY = 'elaraby_products_cache_v4'; 
+      const CACHE_KEY = 'elaraby_products_cache_v3'; 
       const CACHE_TIME_KEY = 'elaraby_cache_time';
       const RECENT_SEARCH_KEY = "elaraby_recent_searches";
       // متغيرات النظام
@@ -1450,242 +1446,89 @@ window.saveCustomerData = async function() {
     }
 };
 
-// ==========================================
-// 1. نظام الحذف المتعدد (Bulk Delete System)
-// ==========================================
+// 4. دالة عرض السجل (Render History) - محدثة للسيرفر
+let customersUnsubscribe = null;
 
-// دخول وضع الحذف (إظهار المربعات)
-window.enterBulkDeleteMode = function() {
-    const defaultBar = document.getElementById('defaultActionBtns');
-    const bulkBar = document.getElementById('bulkActionBtns');
-    const table = document.getElementById('customersTable');
-    
-    if(defaultBar) defaultBar.style.display = 'none';
-    if(bulkBar) bulkBar.style.display = 'flex';
-    if(table) table.classList.add('bulk-active');
-};
-
-// الخروج من وضع الحذف (إخفاء المربعات)
-window.exitBulkDeleteMode = function() {
-    const defaultBar = document.getElementById('defaultActionBtns');
-    const bulkBar = document.getElementById('bulkActionBtns');
-    const table = document.getElementById('customersTable');
-    
-    if(defaultBar) defaultBar.style.display = 'block';
-    if(bulkBar) bulkBar.style.display = 'none';
-    if(table) table.classList.remove('bulk-active');
-    
-    // إلغاء تحديد كل المربعات
-    const selectAllBtn = document.getElementById('selectAllCust');
-    if(selectAllBtn) selectAllBtn.checked = false;
-    document.querySelectorAll('.cust-checkbox').forEach(cb => cb.checked = false);
-};
-
-// تحديد أو إلغاء تحديد الكل
-window.toggleAllCustomers = function(source) {
-    const checkboxes = document.querySelectorAll('.cust-checkbox');
-    checkboxes.forEach(cb => {
-        cb.checked = source.checked;
-    });
-};
-
-// تحديث حالة "تحديد الكل" عند ضغط مربعات فردية
-window.updateSelectAllUI = function() {
-    const allBoxes = document.querySelectorAll('.cust-checkbox');
-    const checkedBoxes = document.querySelectorAll('.cust-checkbox:checked');
-    const selectAll = document.getElementById('selectAllCust');
-    if(selectAll && allBoxes.length > 0) {
-        selectAll.checked = (allBoxes.length === checkedBoxes.length);
-    }
-};
-
-// ===================================
-// 1. دالة حذف المربعات المحددة (الحذف المتعدد) - نسخة مستقرة 100%
-// ====================================
-window.deleteSelectedCustomers = async function() {
-    // جلب كافة المربعات المحددة
-    const checkedBoxes = document.querySelectorAll('.cust-checkbox:checked');
-    
-    // تحويل العناصر المحددة إلى مصفوفة من المعرفات IDs
-    let idsToDelete = [];
-    checkedBoxes.forEach(function(box) {
-        idsToDelete.push(box.value);
-    });
-
-    // إذا لم يتم اختيار أي عميل
-    if (idsToDelete.length === 0) {
-        Swal.fire({
-            icon: 'info',
-            title: 'تنبيه',
-            text: 'من فضلك اختر عميل واحد على الأقل لحذفه.',
-            confirmButtonText: 'حسناً',
-            customClass: { popup: 'ai-swal-popup' }
-        });
-        return;
-    }
-
-    // رسالة التأكيد (بدون رابط الموقع)
-    Swal.fire({
-        title: `حذف ${idsToDelete.length} عميل؟`,
-        text: "هل أنت متأكد؟ سيتم حذف العملاء المحددين نهائياً من السيرفر.",
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        cancelButtonColor: '#6c757d',
-        confirmButtonText: 'نعم، احذفهم',
-        cancelButtonText: 'إلغاء',
-        customClass: { popup: 'ai-swal-popup' }
-    }).then(async (result) => {
-        if (result.isConfirmed) {
-            // إظهار مؤشر التحميل
-            Swal.fire({
-                title: 'جاري الحذف...',
-                allowOutsideClick: false,
-                didOpen: () => { Swal.showLoading(); }
-            });
-
-            try {
-                // استخدام نظام الـ Batch لحذف عدة مستندات في طلب واحد (أسرع وأضمن)
-                const batch = db.batch();
-                
-                idsToDelete.forEach(docId => {
-                    const docRef = db.collection('seller_customers').doc(docId);
-                    batch.delete(docRef);
-                    
-                    // إلغاء منبه الأندرويد إن وجد
-                    if (window.AndroidBridge && typeof window.AndroidBridge.cancelReminder === "function") {
-                        window.AndroidBridge.cancelReminder(docId);
-                    }
-                });
-
-                await batch.commit();
-
-                Swal.fire({
-                    icon: 'success',
-                    title: 'تم الحذف بنجاح',
-                    text: `تم مسح ${idsToDelete.length} سجل بنجاح.`,
-                    timer: 2000,
-                    showConfirmButton: false
-                });
-
-                // الخروج من وضع الحذف المتعدد وتحديث الواجهة
-                if (typeof window.exitBulkDeleteMode === "function") {
-                    window.exitBulkDeleteMode();
-                }
-
-            } catch (error) {
-                console.error("Bulk Delete Error:", error);
-                Swal.fire({
-                    icon: 'error',
-                    title: 'فشل الحذف',
-                    text: 'حدث خطأ في السيرفر: ' + error.message
-                });
-            }
-        }
-    });
-};
-// ==========================================
-// 2. تحديث دالة رسم الجدول (Render History)
-// ==========================================
 window.renderHistory = function() {
     const tbody = document.getElementById('historyBody');
-    const sellerId = localStorage.getItem('seller_doc_id');
+    const sellerId = getSellerId();
 
     if(!tbody) return;
+    
+    // إذا لم يكن مسجلاً، اطلب منه الدخول
     if(!sellerId) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:red;">يرجى تسجيل الدخول أولاً</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:red;">يرجى تسجيل الدخول لعرض بياناتك</td></tr>';
         return;
     }
 
-    // إيقاف أي مستمع قديم لتوفير الأداء
-    if(window.customersUnsubscribe) window.customersUnsubscribe();
+    // إيقاف الاستماع القديم لتجنب التكرار
+    if(customersUnsubscribe) {
+        customersUnsubscribe();
+    }
 
-    window.customersUnsubscribe = db.collection('seller_customers')
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">جاري التحميل من السيرفر...</td></tr>';
+
+    // الاستماع المباشر (Realtime)
+    customersUnsubscribe = db.collection('seller_customers')
         .where('sellerId', '==', sellerId)
         .orderBy('createdAt', 'desc')
+        .limit(50)
         .onSnapshot((snapshot) => {
             if(snapshot.empty) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#777;">لا يوجد عملاء مسجلين</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:#777;">لا يوجد عملاء مسجلين لك حتى الآن</td></tr>';
                 return;
             }
 
             tbody.innerHTML = snapshot.docs.map(doc => {
                 const item = doc.data();
-                const statusClass = item.status === 'تم الشراء' ? 'status-bought' : 'status-pending';
+                
+                let statusClass = 'status-pending';
+                if(item.status === 'تم الشراء') statusClass = 'status-bought';
                 
                 return `
                 <tr>
-                    <td class="bulk-col">
-                        <input type="checkbox" class="cust-checkbox" value="${doc.id}" onchange="updateSelectAllUI()" style="transform: scale(1.3); cursor: pointer;">
-                    </td>
-                    <td style="padding:10px;">${item.date || ''}</td>
-                    <td style="padding:10px; font-weight:bold;">${item.name || ''}</td>
-                    <td style="padding:10px;">
-                        <a href="tel:${item.phone}" style="text-decoration:none; background:#e3f2fd; color:#1976d2; padding:5px 10px; border-radius:20px; font-weight:bold; font-size:12px;">
+                    <td style="padding:10px; border-bottom:1px solid #eee;">${item.date}</td>
+                    <td style="padding:10px; border-bottom:1px solid #eee; font-weight:bold;">${item.name}</td>
+                    <td style="padding:10px; border-bottom:1px solid #eee;">
+                        <a href="tel:${item.phone}" style="text-decoration:none; background:#e3f2fd; color:#1976d2; padding:5px 10px; border-radius:20px; font-weight:bold; font-size:12px; display:inline-block; direction:ltr;">
                            ${item.phone} 📞
                         </a>
                     </td>
-                    <td style="font-size:11px;">${item.product || ''}</td>
-                    <td class="${statusClass}">${item.status || ''}</td>
-                    <td>
-                        <button onclick="deleteCloudRecord('${doc.id}')" style="color:#ef4444; border:none; background:none; cursor:pointer; font-size:16px;">❌</button>
+                    <td style="font-size:11px; padding:10px; border-bottom:1px solid #eee;">${item.product}</td>
+                    <td style="padding:10px; border-bottom:1px solid #eee;" class="${statusClass}">
+                        ${item.status}
+                    </td>
+                    <td style="padding:10px; border-bottom:1px solid #eee;">
+                        <button onclick="deleteCloudRecord('${doc.id}')" style="color:red; border:none; background:none; cursor:pointer; font-size:16px;">❌</button>
                     </td>
                 </tr>`;
             }).join('');
         }, (error) => {
-            console.error("Firestore Error:", error);
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:red;">خطأ في جلب البيانات</td></tr>';
+            console.error("History Error:", error);
+            if(error.message.includes("index")) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:orange;">النظام يحتاج تهيئة (Index) - راجع المطور</td></tr>';
+            } else {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:red;">خطأ في جلب البيانات: ' + error.message + '</td></tr>';
+            }
         });
 };
 
-// ===================================
-// 2. دالة حذف عميل فردي (بدون ظهور رابط الموقع)
-// ===================================
-window.deleteCloudRecord = function(docId) {
-    Swal.fire({
-        title: 'تأكيد الحذف',
-        text: 'هل أنت متأكد من حذف هذا العميل نهائياً؟',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        cancelButtonColor: '#6c757d',
-        confirmButtonText: 'نعم، احذف',
-        cancelButtonText: 'إلغاء',
-        customClass: { popup: 'ai-swal-popup' }
-    }).then(async (result) => {
-        if (result.isConfirmed) {
-            Swal.fire({ title: 'جاري الحذف...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
-            try {
-                await db.collection('seller_customers').doc(docId).delete();
-                // تنظيف منبه الأندرويد
-                if (window.AndroidBridge && typeof window.AndroidBridge.cancelReminder === "function") {
-                    window.AndroidBridge.cancelReminder(docId);
-                }
-                Swal.fire({ icon: 'success', title: 'تم الحذف بنجاح', timer: 1500, showConfirmButton: false });
-            } catch(e) {
-                Swal.fire('خطأ', 'حدث خطأ أثناء الحذف: ' + e.message, 'error');
-            }
+// 5. دالة الحذف (Delete)
+window.deleteCloudRecord = async function(docId) {
+    if(confirm("هل أنت متأكد من حذف هذا العميل؟")) {
+        try {
+            await db.collection('seller_customers').doc(docId).delete();
+            // لا حاجة لتحديث الواجهة يدوياً، onSnapshot ستقوم بذلك
+        } catch(e) {
+            Swal.fire('خطأ', 'لم يتم الحذف: ' + e.message, 'error');
         }
-    });
-};
-
-// ==========================================
-// 4. دوال التحكم بمربعات التحديد (Checkbox Logic)
-// ==========================================
-window.toggleAllCustomers = function(source) {
-    const checkboxes = document.querySelectorAll('.cust-checkbox');
-    checkboxes.forEach(cb => cb.checked = source.checked);
-};
-
-window.updateSelectAllUI = function() {
-    const allBoxes = document.querySelectorAll('.cust-checkbox');
-    const checkedBoxes = document.querySelectorAll('.cust-checkbox:checked');
-    const selectAll = document.getElementById('selectAllCust');
-    if(selectAll) {
-        selectAll.checked = (allBoxes.length > 0 && allBoxes.length === checkedBoxes.length);
     }
 };
 
+// 6. دالة مسح السجل بالكامل (تحذير)
+window.clearHistory = function() {
+    Swal.fire('تنبيه', 'لا يمكن مسح سجل السيرفر بالكامل بضغطة زر للأمان. قم بحذف العملاء واحداً تلو الآخر.', 'info');
+};
 
 // 4. إصلاح زر حفظ المبيعات (Commit Sales)
 window.commitAllSales = async function() {
@@ -1960,38 +1803,53 @@ window.removeFromUnsent = function(localId) {
     updateSalesUI();
 };
 
-// ==========================================
-// 1. دالة حذف عملية المبيعات (بدون ظهور رابط الموقع)
-// ==========================================
+// حذف من السجل المرسل (يحذف من السيرفر)
 window.deleteSaleEntry = async function(localId) {
-    Swal.fire({
-        title: 'تأكيد الحذف',
-        text: 'هل تريد حذف هذه العملية من السجل والسيرفر نهائياً؟',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        cancelButtonColor: '#6c757d',
-        confirmButtonText: 'نعم، احذف',
-        cancelButtonText: 'إلغاء',
-        customClass: { popup: 'ai-swal-popup' }
-    }).then(async (result) => {
-        if (result.isConfirmed) {
-            let history = safeParseJSON('elaraby_sales_v3',[]);
-            const item = history.find(i => i.localId === localId);
-            
-            if(item && item.firestoreId && navigator.onLine) {
-                await db.collection("sales_transactions").doc(item.firestoreId).delete().catch(console.error);
-            }
-            
-            history = history.filter(i => i.localId !== localId);
-            localStorage.setItem('elaraby_sales_v3', JSON.stringify(history));
-            updateSalesUI();
-            
-            Swal.fire({ icon: 'success', title: 'تم الحذف بنجاح', timer: 1500, showConfirmButton: false });
-        }
-    });
+    if(!confirm("حذف هذه العملية من السجل والسيرفر؟")) return;
+    
+    let history = safeParseJSON('elaraby_sales_v3',[]);
+    const item = history.find(i => i.localId === localId);
+    
+    if(item && item.firestoreId && navigator.onLine) {
+        await db.collection("sales_transactions").doc(item.firestoreId).delete().catch(console.error);
+    }
+    
+    history = history.filter(i => i.localId !== localId);
+    localStorage.setItem('elaraby_sales_v3', JSON.stringify(history));
+    updateSalesUI();
 };
 
+window.downloadSalesCSV = function() {
+    const s = safeParseJSON('elaraby_sales_v3',[]);
+
+    if (s.length === 0) {
+        Swal.fire('تنبيه', 'لا توجد بيانات محفوظة محلياً للتحميل', 'info');
+        return;
+    }
+
+    // إضافة عمود العدد والإجمالي
+    let csvContent = "\uFEFFالفرع,المنتج,العدد,سعر الوحدة,الإجمالي,التاريخ\n";
+
+    csvContent += s.map(item => {
+        const branch = item.branch ? `"${item.branch.replace(/"/g, '""')}"` : '"-"';
+        const product = item.product ? `"${item.product.replace(/"/g, '""')}"` : '"-"';
+        const price = Number(item.price) || 0;
+        const qty = Number(item.qty) || 1;
+        const total = price * qty;
+        const date = item.date || "-";
+
+        return `${branch},${product},${qty},${price},${total},${date}`;
+    }).join("\n");
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `مبيعات_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
       
 // Sales Tooltip Animation 
       document.addEventListener('DOMContentLoaded', function() {
@@ -3008,7 +2866,19 @@ window.handleCloudCall = async function(docId, phone) {
     } catch(e) { console.error("Call Update Error", e); }
 };
 
-
+window.deleteCloudRecord = async function(docId) {
+    if(confirm("هل أنت متأكد من حذف هذا العميل؟")) {
+        try {
+            await db.collection('seller_customers').doc(docId).delete();
+            // 🔥 إلغاء منبه الأندرويد
+            if (window.AndroidBridge && window.AndroidBridge.cancelReminder) {
+                window.AndroidBridge.cancelReminder(docId);
+            }
+        } catch(e) {
+            Swal.fire('خطأ', 'لم يتم الحذف: ' + e.message, 'error');
+        }
+    }
+};
 
 // 4. دالة التأجيل (Postpone) مع ربط منبه الأندرويد
 window.postponeCloudReminder = async function(docId) {
@@ -3857,4 +3727,3 @@ document.addEventListener("DOMContentLoaded", () => {
 // triggerEdgeMenuHint(); 
       //]]>
       
-    
