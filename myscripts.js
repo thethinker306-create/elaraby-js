@@ -3698,3 +3698,4 @@ document.addEventListener("DOMContentLoaded", () => {
     if (savedDocId) {
         triggerEdgeMenuHint();
     }
+});
