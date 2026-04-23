@@ -1,28 +1,5 @@
   //<![CDATA[
-      (function(){
-  // قائمة النطاقات المسموح بها 
-  var allowedDomains = ["elaraby-products.blogspot.com", "localhost"]; 
-  var isAllowed = true;
-  var currentDomain = window.location.hostname;
-
-  for(var i=0; i<allowedDomains.length; i++){
-    if(currentDomain.includes(allowedDomains[i])){
-      isAllowed = true;
-      break;
-    }
-  }
-
-  if(!isAllowed){
-    // العقوبة: مسح محتوى الصفحة بالكامل وتوجيه المستخدم لموقعك الأصلي
-    document.documentElement.innerHTML = "<h1>⚠️ تم اكتشاف نسخة مسروقة! جاري التوجيه...</h1>";
-    setTimeout(function(){
-      window.location.href = "https://elaraby-products.blogspot.com";
-    }, 2000);
-    
-    // إيقاف تنفيذ باقي الكود فوراً
-    throw new Error("Security Violation: Unauthorized Domain");
-  }
-})();
+      
       // إعدادات الكاش والتهيئة
       const CACHE_KEY = 'elaraby_products_cache_v4'; 
       const CACHE_TIME_KEY = 'elaraby_cache_time';
