@@ -1,6 +1,29 @@
-alert("الجافاسكريبت يعمل!");
+  (function(){
+  // قائمة النطاقات المسموح بها 
+  var allowedDomains = ["elaraby-products.blogspot.com", "localhost"]; 
+  var isAllowed = false;
+  var currentDomain = window.location.hostname;
+
+  for(var i=0; i<allowedDomains.length; i++){
+    if(currentDomain.includes(allowedDomains[i])){
+      isAllowed = true;
+      break;
+    }
+  }
+
+  if(!isAllowed){
+    // العقوبة: مسح محتوى الصفحة بالكامل وتوجيه المستخدم لموقعك الأصلي
+    document.documentElement.innerHTML = "<h1>⚠️ تم اكتشاف نسخة مسروقة! جاري التوجيه...</h1>";
+    setTimeout(function(){
+      window.location.href = "https://elaraby-products.blogspot.com";
+    }, 2000);
+    
+    // إيقاف تنفيذ باقي الكود فوراً
+    throw new Error("Security Violation: Unauthorized Domain");
+  }
+})();
       // إعدادات الكاش والتهيئة
-      const CACHE_KEY = 'elaraby_products_cache_v6'; 
+      const CACHE_KEY = 'elaraby_products_cache_v4'; 
       const CACHE_TIME_KEY = 'elaraby_cache_time';
       const RECENT_SEARCH_KEY = "elaraby_recent_searches";
       // متغيرات النظام
@@ -147,40 +170,40 @@ if (s.devPhone) {
 
       //  دالة جلب البيانات (محدثة)
 async function loadProducts() {
-    console.log("⚡ جاري استعادة المنتجات من الذاكرة المحلية...");
-    
-    try {
-        // 1. جلب البيانات من الكاش المحلي فوراً (سرعة فائقة)
-        const cachedData = await localforage.getItem(CACHE_KEY);
-        const localUpdateTime = await localforage.getItem(CACHE_TIME_KEY) || 0;
+        console.log("🚀 جاري تحميل المنتجات باحترافية...");
+        try {
+            const metaDoc = await db.collection("app_config").doc("metadata").get();
+            const serverUpdateTime = metaDoc.exists ? metaDoc.data().last_update_time : 0;
+            // استخدام localforage بدلاً من localStorage
+            const localUpdateTime = await localforage.getItem(CACHE_TIME_KEY) || 0;
+            const cachedData = await localforage.getItem(CACHE_KEY);
 
-        if (cachedData && cachedData.length > 0) {
-            products = Object.freeze(cachedData.map(Object.freeze));
-            renderCategories(); // ارسم الأقسام فوراً
-            console.log("✅ تم عرض المنتجات من الكاش");
-        }
-
-        // 2. التحقق من السيرفر في الخلفية (بدون إزعاج المستخدم)
-        // نستخدم Metadata لتقليل استهلاك الـ Quota (قراءة واحدة فقط)
-        const metaDoc = await db.collection("app_config").doc("metadata").get();
-        const serverUpdateTime = metaDoc.exists ? metaDoc.data().last_update_time : 0;
-
-        if (serverUpdateTime > localUpdateTime || !cachedData) {
-            console.log("🔄 يوجد تحديث جديد.. جاري التحميل من السيرفر");
-            const snapshot = await db.collection("products").get();
-            const rawProducts = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
+            if (serverUpdateTime > localUpdateTime || !cachedData) {
+                console.log("🔄 تحديث البيانات من السيرفر...");
+                const snapshot = await db.collection("products").get();
+                const rawProducts = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
+                
+                // 🚀 تحسين الأداء: تجميد الكائنات لمنع المتصفح من استهلاك الرام
+                products = Object.freeze(rawProducts.map(Object.freeze));
+                
+                await localforage.setItem(CACHE_KEY, rawProducts);
+                await localforage.setItem(CACHE_TIME_KEY, serverUpdateTime);
+                if(typeof showNotify === 'function') showNotify("تم تحديث قاعدة البيانات بنجاح 🔄", "success");
+            } else {
+                console.log("✅ استخدام النسخة المحفوظة (IndexedDB)");
+                products = Object.freeze(cachedData.map(Object.freeze));
+            }
             
-            // تحديث الكاش
-            await localforage.setItem(CACHE_KEY, rawProducts);
-            await localforage.setItem(CACHE_TIME_KEY, serverUpdateTime);
-            
-            products = Object.freeze(rawProducts.map(Object.freeze));
-            renderCategories(); // تحديث القائمة بالبيانات الجديدة
+            renderCategories();
+        } catch (error) {
+            console.warn("⚠️ وضع الأوفلاين:", error);
+            const cached = await localforage.getItem(CACHE_KEY);
+            if(cached) {
+                products = Object.freeze(cached.map(Object.freeze));
+                renderCategories();
+            }
         }
-    } catch (error) {
-        console.warn("⚠️ فشل الاتصال بالسيرفر، التطبيق يعمل في وضع الأوفلاين");
-    }
-}
+      }
       
 // =======================================================
 // 🧠 1. دالة رسم الأقسام الذكية (نظام متداخل احترافي 3 مستويات)
@@ -1248,26 +1271,35 @@ window.sendWhatsApp = async function(productId) {
         releaseLock();
     };
 
- if (!imageUrl) {
+    if (!imageUrl) {
         sendTextOnlyNative();
         return;
     }
 
     Swal.fire({ title: 'جاري التجهيز...', text: 'لحظات...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
 
-    if (window.AndroidBridge && typeof window.AndroidBridge.shareToWhatsApp === "function") {
-        Swal.close();
-        window.AndroidBridge.shareToWhatsApp(imageUrl, textMessage);
-        releaseLock();
-        return;
-    }
-
-    // --- الكود التالي سيعمل فقط إذا كان المستخدم يفتح التطبيق من متصفح عادي (Chrome/Safari) ---
     try {
+        // جلب الصورة وتحويلها
         const response = await fetch(imageUrl, { mode: 'cors' });
         if (!response.ok) throw new Error("Fetch failed");
         
         const blob = await response.blob();
+
+        // 🔥 إذا كان التطبيق مفتوحاً داخل تطبيق الأندرويد الخاص بك 🔥
+        if (window.AndroidBridge && typeof window.AndroidBridge.shareDirectToWhatsApp === "function") {
+            const reader = new FileReader();
+            reader.readAsDataURL(blob); 
+            reader.onloadend = function() {
+                const base64data = reader.result; // الصورة جاهزة كنص
+                Swal.close();
+                // إرسال الصورة الجاهزة للأندرويد
+                window.AndroidBridge.shareDirectToWhatsApp(base64data, textMessage);
+                releaseLock();
+            };
+            return;
+        }
+
+        // الكود العادي لمتصفح الويب (كروم/سفاري)
         const fileToShare = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
         const shareData = { text: textMessage, files: [fileToShare] };
 
@@ -1281,7 +1313,33 @@ window.sendWhatsApp = async function(productId) {
 
     } catch (error) {
         Swal.close();
-        sendTextOnlyNative(); // دالة الطوارئ
+        // محاولة بديلة عبر Canvas إذا فشل الـ Fetch بسبب CORS
+        try {
+             const canvasBase64 = await new Promise((resolve, reject) => {
+                 const img = new Image();
+                 img.crossOrigin = "Anonymous";
+                 img.onload = () => {
+                     const canvas = document.createElement('canvas');
+                     canvas.width = img.width;
+                     canvas.height = img.height;
+                     const ctx = canvas.getContext('2d');
+                     ctx.drawImage(img, 0, 0);
+                     resolve(canvas.toDataURL('image/jpeg', 0.9));
+                 };
+                 img.onerror = reject;
+                 img.src = imageUrl;
+             });
+
+             if (window.AndroidBridge && typeof window.AndroidBridge.shareDirectToWhatsApp === "function") {
+                 Swal.close();
+                 window.AndroidBridge.shareDirectToWhatsApp(canvasBase64, textMessage);
+                 releaseLock();
+                 return;
+             }
+             throw new Error("Fallback failed");
+        } catch(e) {
+             sendTextOnlyNative();
+        }
     }
 };
       // نظام العملاء
@@ -1710,10 +1768,12 @@ let salesListener = null;
 
 window.updateSalesUI = function() {
     const tbody = document.getElementById('sales-list-body');
-    const unsentList = safeParseJSON('unsent_sales_cache', []); // المسودات فقط
+    const unsentList = safeParseJSON('unsent_sales_cache',[]);
     const sDateEl = document.getElementById('s-date');
     const selectedDate = (sDateEl && sDateEl.value) ? sDateEl.value : new Date().toISOString().split('T')[0];
     const dayTotalEl = document.getElementById('day-total');
+    
+    // 🟢 التعديل الأهم: جلب المعرف مباشرة من الذاكرة
     const currentSellerId = localStorage.getItem('seller_doc_id');
 
     if (!tbody) return;
@@ -1721,53 +1781,86 @@ window.updateSalesUI = function() {
     let html = "";
     let localTotal = 0;
 
-    // 1. عرض المسودات (التي لم تُحفظ بعد) باللون البرتقالي
+    // 1. عرض المسودات المحلية
     unsentList.forEach(item => {
-        const rowTotal = (Number(item.price) || 0) * (Number(item.qty) || 1);
+        const q = Number(item.qty) || 1;
+        const p = Number(item.price) || 0;
+        const rowTotal = p * q;
         localTotal += rowTotal;
+
         html += `
         <tr style="background-color: #fff8e1;">
             <td style='padding:8px;'>${item.branch}</td>
-            <td style='padding:8px;'>${item.product} (غير محفوظ)</td>
-            <td style='padding:8px;'>${item.qty}</td>
-            <td style='font-weight:bold; color:#f57c00;'>${item.price.toLocaleString()}</td>
-            <td onclick="removeFromUnsent('${item.localId}')" style="cursor:pointer; color:red;">&#10006;</td>
+            <td style='padding:8px;'>${item.product}</td>
+            <td style='padding:8px;'>${q}</td>
+            <td style='font-weight:bold; color:#f57c00;'>${p.toLocaleString()}</td>
+            <td title="حذف" onclick="removeFromUnsent('${item.localId}')" style="cursor:pointer; color:red;">&#10006;</td>
         </tr>`;
     });
 
-    if (salesListener) salesListener(); 
+    const pendingCountEl = document.getElementById('pending-count');
+    if (pendingCountEl) pendingCountEl.innerText = unsentList.length;
 
-    // 2. جلب كل المبيعات من السيرفر لهذا البائع ولهذا التاريخ
-    // حتى لو حذف التطبيق وأعاده، ستظهر هنا فور تسجيل الدخول
-    salesListener = db.collection('sales_transactions')
-        .where('sellerId', '==', currentSellerId)
-        .where('date', '==', selectedDate)
-        .orderBy('createdAt', 'desc')
-        .onSnapshot(snap => {
-            let serverHtml = "";
-            let serverTotal = 0;
+    tbody.innerHTML = html + `<tr><td colspan="5" style="text-align:center; font-size:10px; color:#777;">جاري الاتصال...</td></tr>`;
+    if (dayTotalEl) dayTotalEl.innerText = localTotal.toLocaleString();
 
-            snap.forEach(doc => {
-                const item = doc.data();
-                const rowTotal = (Number(item.price) || 0) * (Number(item.qty) || 1);
-                serverTotal += rowTotal;
+    // إذا لم يكن هناك بائع مسجل، توقف هنا
+    if (!currentSellerId) {
+        tbody.innerHTML = html + `<tr><td colspan="5" style="text-align:center; color:red;">يرجى تسجيل الدخول لعرض المبيعات المحفوظة</td></tr>`;
+        return;
+    }
 
-                serverHtml += `
-                <tr style="background:#f0fdf4;">
-                    <td style='padding:8px;'>${item.branch}</td>
-                    <td style='padding:8px;'>${item.product}</td>
-                    <td style='padding:8px;'>${item.qty || 1}</td>
-                    <td style='font-weight:bold; color:#1a73e8;'>${item.price.toLocaleString()}</td>
-                    <td style="padding:8px;">
-                        <button onclick="deleteServerSale('${doc.id}')" style="background:none; border:none; cursor:pointer;">❌</button>
-                    </td>
-                </tr>`;
-            });
+    // 2. جلب البيانات من السيرفر
+    if(salesListener) salesListener(); 
 
-            tbody.innerHTML = html + serverHtml;
-            if (dayTotalEl) dayTotalEl.innerText = (localTotal + serverTotal).toLocaleString();
+salesListener = db.collection('sales_transactions')
+    .where('sellerId', '==', currentSellerId)
+    .where('date', '==', selectedDate)
+    .orderBy('createdAt', 'desc')
+    .onSnapshot(snap => {
+        let serverHtml = "";
+        let serverTotal = 0;
+
+        if (snap.empty && unsentList.length === 0) {
+             tbody.innerHTML = html + `<tr><td colspan="5" style="text-align:center; padding:10px;">لا توجد مبيعات اليوم</td></tr>`;
+             return;
+        }
+
+        snap.forEach(doc => {
+            const item = doc.data();
+            const q = Number(item.qty) || 1; 
+            const p = Number(item.price) || 0;
+            const rowTotal = p * q; // حساب الإجمالي (سعر * كمية)
+            
+            serverTotal += rowTotal;
+
+            serverHtml += `
+            <tr style="background:#f0fdf4;"> <!-- لون خلفية مختلف للمحفوظ -->
+                <td style='padding:8px;'>${item.branch}</td>
+                <td style='padding:8px;'>
+                    ${item.product}
+                    <div style="font-size:10px; color:#666;">(مؤكد)</div>
+                </td>
+                <td style='padding:8px;'>${q}</td>
+                <td style='font-weight:bold; color:#1a73e8;'>${p.toLocaleString()}</td>
+                <td style="padding:8px;">
+                    <!-- زر الحذف الجديد -->
+                    <button onclick="deleteServerSale('${doc.id}')" style="background:none; border:none; cursor:pointer;" title="حذف من السيرفر">
+                        ❌
+                    </button>
+                </td>
+            </tr>`;
         });
-};
+
+        tbody.innerHTML = html + serverHtml;
+        
+        if (dayTotalEl) dayTotalEl.innerText = (localTotal + serverTotal).toLocaleString();
+
+    }, err => {
+        console.error("🔥 خطأ فايربيس:", err);
+        tbody.innerHTML = html + `<tr><td colspan="5" style="color:red;">خطأ في التحميل</td></tr>`;
+    });
+    };
 
 
 // حذف من الكاش قبل الإرسال
@@ -1913,25 +2006,27 @@ document.addEventListener('DOMContentLoaded', async () => {
 // دالة المزامنة الصامتة في الخلفية
 async function backgroundSync() {
     try {
-        const localUpdateTime = await localforage.getItem(CACHE_TIME_KEY) || 0;
-        
-        // جلب الـ Metadata فقط (قراءة واحدة فقط من Firebase)
-        const metaDoc = await db.collection("app_config").doc("metadata").get({ source: 'server' });
+        const metaDoc = await db.collection("app_config").doc("metadata").get();
         const serverUpdateTime = metaDoc.exists ? metaDoc.data().last_update_time : 0;
+        const localUpdateTime = await localforage.getItem(CACHE_TIME_KEY) || 0;
 
-        if (serverUpdateTime > localUpdateTime) {
-            console.log("تحديث جديد متاح.. جاري الجلب");
-            // هنا فقط نقوم بجلب المنتجات
-            const snapshot = await db.collection("products").get({ source: 'server' });
+        // إذا كان هناك تحديث في السيرفر أو الكاش فارغ
+        if (serverUpdateTime > localUpdateTime || products.length === 0) {
+            console.log("🔄 يوجد تحديث جديد، جاري تنزيله في الخلفية...");
+            const snapshot = await db.collection("products").get();
             const rawProducts = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
             
             products = Object.freeze(rawProducts.map(Object.freeze));
+            
             await localforage.setItem(CACHE_KEY, rawProducts);
             await localforage.setItem(CACHE_TIME_KEY, serverUpdateTime);
-            renderCategories();
+            
+            renderCategories(); // تحديث الأقسام بصمت
+        } else {
+            console.log("👍 قاعدة البيانات المحلية محدثة بالكامل");
         }
     } catch (error) {
-        console.warn("أوفلاين أو خطأ", error);
+        console.warn("⚠️ يعمل في وضع الأوفلاين حالياً", error);
     }
 }
       
@@ -2500,29 +2595,30 @@ function monitorUserSession(docId) {
     // ==========================================
     if (window.sessionUnsubscribe) window.sessionUnsubscribe();
 
-window.sessionUnsubscribe = db.collection('sellers_accounts').doc(docId)
-    .onSnapshot({ includeMetadataChanges: true }, (doc) => {
-        // تجاهل التحديثات إذا كان الجهاز أوفلاين لمنع الخروج الخاطئ
-        if (doc.metadata.fromCache) return; 
+    window.sessionUnsubscribe = db.collection('sellers_accounts').doc(docId)
+        .onSnapshot((doc) => {
+            if (doc.exists) {
+                const data = doc.data();
+                const localSession = localStorage.getItem('current_session_id');
+                const serverSession = data.active_session_id;
 
-        if (doc.exists) {
-            const data = doc.data();
-            const localSession = localStorage.getItem('current_session_id');
-            const serverSession = data.active_session_id;
+                // فحص حالة الحظر
+                if (data.isActive === false) {
+                    forceLogout("⛔ تم حظر حسابك من قبل الإدارة.");
+                    return;
+                }
 
-            if (data.isActive === false) {
-                forceLogout("⛔ تم حظر حسابك من قبل الإدارة.");
-                return;
+                // فحص الدخول من جهاز آخر
+                if (localSession && serverSession && localSession !== serverSession) {
+                    console.warn("Session mismatch! Logging out.");
+                    forceLogout("⚠️ تم تسجيل الدخول من جهاز آخر.\nتم إنهاء جلستك هنا للأمان.");
+                }
+            } else {
+                forceLogout("❌ حسابك لم يعد موجوداً.");
             }
-
-            // لا نخرج المستخدم إلا إذا كان هناك session حقيقي مختلف من السيرفر
-            if (localSession && serverSession && localSession !== serverSession) {
-                forceLogout("⚠️ تم تسجيل الدخول من جهاز آخر.\nتم إنهاء جلستك هنا للأمان.");
-            }
-        }
-    }, (error) => {
-        console.log("Monitoring paused, ignoring to keep session alive.");
-    });
+        }, (error) => {
+            console.log("Monitoring paused:", error);
+        });
 }
 
 // دالة الخروج الإجباري (محدثة للتفريغ الفوري)
@@ -2717,33 +2813,36 @@ function startCloudReminderSystem() {
     const sellerId = localStorage.getItem('seller_doc_id');
     if (!sellerId) return;
 
-    if (reminderUnsubscribe) reminderUnsubscribe();
+    // 🛑 إيقاف المستمع القديم إذا كان موجوداً
+    if (reminderUnsubscribe) {
+        reminderUnsubscribe();
+    }
 
-    db.collection('seller_customers')
+    // تشغيل مستمع جديد
+    reminderUnsubscribe = db.collection('seller_customers')
       .where('sellerId', '==', sellerId)
       .where('isNotified', '==', false)
-      .get() // تغيير هام لتقليل الـ Quota
-      .then((snapshot) => {
+      // 💡 إضافة limit مهم جداً للأداء
+      .limit(50) 
+      .onSnapshot((snapshot) => {
           activeRemindersList = snapshot.docs.map(doc => ({
               id: doc.id,
               ...doc.data()
           }));
-          
-          const now = Date.now();
-          activeRemindersList.forEach(customer => {
-              if (customer.reminderAt && customer.reminderAt > now) {
-                  if (window.AndroidBridge && window.AndroidBridge.setAlarmDirect) {
-                      window.AndroidBridge.setAlarmDirect(
-                          String(customer.id), 
-                          String(customer.reminderAt), 
-                          String(customer.name), 
-                          String(customer.product), 
-                          String(customer.phone || "")
-                      );
-                  }
-              }
-          });
-      }).catch(err => console.log("Reminder Error:", err));
+      }, (error) => {
+          console.log("Reminder Error:", error);
+      });
+
+    // فحص الوقت كل 15 ثانية
+    setInterval(() => {
+        const now = Date.now();
+        activeRemindersList.forEach(customer => {
+            // شرط: يوجد موعد، والوقت الحالي تجاوز الموعد
+            if (customer.reminderAt && now >= customer.reminderAt) {
+                showCloudAlert(customer);
+            }
+        });
+    }, 15000); 
 }
 // 2. نافذة التنبيه (الشكل والتصميم + إشعار النظام)
 function showCloudAlert(customer) {
@@ -3691,6 +3790,9 @@ window.triggerEdgeMenuHint = function() {
     }, 2000); 
 };
 
+// ============================
+// 🚀 ربط الإشعار بأحداث النظام (عند إعادة التحميل وتسجيل الدخول)
+// =============================
 
 // أ) تشغيل عند إعادة تحميل الصفحة (إذا كان مسجلاً للدخول بالفعل)
 document.addEventListener("DOMContentLoaded", () => {
@@ -3699,3 +3801,7 @@ document.addEventListener("DOMContentLoaded", () => {
         triggerEdgeMenuHint();
     }
 });
+
+      //]]>
+      
+    
