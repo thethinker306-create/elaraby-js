@@ -1492,7 +1492,7 @@ window.renderHistory = function() {
     
     // إذا لم يكن مسجلاً، اطلب منه الدخول
     if(!sellerId) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:red;">يرجى تسجيل الدخول لعرض بياناتك</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:red;">يرجى تسجيل الدخول لعرض بياناتك</td></tr>';
         return;
     }
 
@@ -1501,7 +1501,7 @@ window.renderHistory = function() {
         customersUnsubscribe();
     }
 
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">جاري التحميل من السيرفر...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">جاري التحميل من السيرفر...</td></tr>';
 
     // الاستماع المباشر (Realtime)
     customersUnsubscribe = db.collection('seller_customers')
@@ -1510,7 +1510,7 @@ window.renderHistory = function() {
         .limit(50)
         .onSnapshot((snapshot) => {
             if(snapshot.empty) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:#777;">لا يوجد عملاء مسجلين لك حتى الآن</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#777;">لا يوجد عملاء مسجلين لك حتى الآن</td></tr>';
                 return;
             }
 
@@ -1522,6 +1522,10 @@ window.renderHistory = function() {
                 
                 return `
                 <tr>
+                    <!-- 🟢 تم إضافة خلية التحديد المتعدد هنا -->
+                    <td class="bulk-col" style="padding:10px; border-bottom:1px solid #eee;">
+                        <input type="checkbox" class="cust-checkbox" value="${doc.id}" style="transform: scale(1.3); cursor: pointer;" onchange="checkSelectionStatus()">
+                    </td>
                     <td style="padding:10px; border-bottom:1px solid #eee;">${item.date}</td>
                     <td style="padding:10px; border-bottom:1px solid #eee; font-weight:bold;">${item.name}</td>
                     <td style="padding:10px; border-bottom:1px solid #eee;">
@@ -1541,24 +1545,14 @@ window.renderHistory = function() {
         }, (error) => {
             console.error("History Error:", error);
             if(error.message.includes("index")) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:orange;">النظام يحتاج تهيئة (Index) - راجع المطور</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:orange;">النظام يحتاج تهيئة (Index) - راجع المطور</td></tr>';
             } else {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:red;">خطأ في جلب البيانات: ' + error.message + '</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:red;">خطأ في جلب البيانات: ' + error.message + '</td></tr>';
             }
         });
 };
 
-// 5. دالة الحذف (Delete)
-window.deleteCloudRecord = async function(docId) {
-    if(confirm("هل أنت متأكد من حذف هذا العميل؟")) {
-        try {
-            await db.collection('seller_customers').doc(docId).delete();
-            // لا حاجة لتحديث الواجهة يدوياً، onSnapshot ستقوم بذلك
-        } catch(e) {
-            Swal.fire('خطأ', 'لم يتم الحذف: ' + e.message, 'error');
-        }
-    }
-};
+
 
 // 6. دالة مسح السجل بالكامل (تحذير)
 window.clearHistory = function() {
@@ -2954,6 +2948,124 @@ window.deleteCloudRecord = async function(docId) {
             Swal.fire('خطأ', 'لم يتم الحذف: ' + e.message, 'error');
         }
     }
+};
+
+// =============================
+// 🗑️ نظام الحذف المتعدد لسجل العملاء الاحترافي
+// ==========================
+
+// دالة الدخول في وضع الحذف المتعدد
+window.enterBulkDeleteMode = function() {
+    document.getElementById('defaultActionBtns').style.display = 'none';
+    document.getElementById('bulkActionBtns').style.display = 'flex';
+    document.getElementById('customersTable').classList.add('bulk-active');
+    
+    // تصفير جميع التحديدات عند الفتح
+    document.getElementById('selectAllCust').checked = false;
+    document.querySelectorAll('.cust-checkbox').forEach(cb => cb.checked = false);
+};
+
+// دالة الخروج من وضع الحذف المتعدد
+window.exitBulkDeleteMode = function() {
+    document.getElementById('defaultActionBtns').style.display = 'block';
+    document.getElementById('bulkActionBtns').style.display = 'none';
+    document.getElementById('customersTable').classList.remove('bulk-active');
+};
+
+// دالة تحديد الكل / إلغاء تحديد الكل
+window.toggleAllCustomers = function(masterCheckbox) {
+    const checkboxes = document.querySelectorAll('.cust-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = masterCheckbox.checked;
+    });
+};
+
+// دالة مساعدة: لتحديث حالة "تحديد الكل" إذا قام المستخدم بتحديد العناصر يدوياً
+window.checkSelectionStatus = function() {
+    const totalBoxes = document.querySelectorAll('.cust-checkbox').length;
+    const checkedBoxes = document.querySelectorAll('.cust-checkbox:checked').length;
+    const masterCheckbox = document.getElementById('selectAllCust');
+    
+    if (masterCheckbox) {
+        masterCheckbox.checked = (totalBoxes > 0 && totalBoxes === checkedBoxes);
+    }
+};
+
+// دالة الحذف الفعلية (مع رسالة تحذير احترافية)
+window.deleteSelectedCustomers = async function() {
+    const selectedBoxes = document.querySelectorAll('.cust-checkbox:checked');
+    const docIds = Array.from(selectedBoxes).map(cb => cb.value);
+
+    // إذا لم يحدد أي عميل
+    if (docIds.length === 0) {
+        Swal.fire({
+            toast: true,
+            position: 'top-end',
+            icon: 'warning',
+            title: 'يرجى تحديد عميل واحد على الأقل للحذف.',
+            showConfirmButton: false,
+            timer: 3000
+        });
+        return;
+    }
+
+    // تنبيه احترافي لتأكيد الحذف
+    Swal.fire({
+        title: 'تأكيد الحذف المتعدد',
+        text: `هل أنت متأكد من حذف (${docIds.length}) عميل نهائياً؟ لا يمكن التراجع عن هذا الإجراء!`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444', // لون أحمر يعبر عن الخطر
+        cancelButtonColor: '#6b7280', // لون رمادي للإلغاء
+        confirmButtonText: 'نعم، احذف المحددين',
+        cancelButtonText: 'تراجع',
+        customClass: { popup: 'ai-swal-popup' } // تناسق مع ستايل التطبيق
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            
+            // إظهار اللودنج أثناء عملية الحذف
+            Swal.fire({
+                title: 'جاري الحذف...',
+                html: 'يرجى الانتظار لحين الانتهاء',
+                allowOutsideClick: false,
+                didOpen: () => { Swal.showLoading(); }
+            });
+
+            try {
+                // استخدام نظام الـ Batch في الفايربيس للحذف دفعة واحدة بسرعة فائقة
+                const batch = db.batch();
+                
+                docIds.forEach(id => {
+                    const docRef = db.collection('seller_customers').doc(id);
+                    batch.delete(docRef);
+                    
+                    // إلغاء منبه الأندرويد المرتبط بكل عميل (إن وجد)
+                    if (window.AndroidBridge && typeof window.AndroidBridge.cancelReminder === "function") {
+                        window.AndroidBridge.cancelReminder(id);
+                    }
+                });
+
+                // تنفيذ الحذف الشامل
+                await batch.commit();
+
+                // إغلاق اللودنج وإظهار رسالة النجاح
+                Swal.fire({
+                    icon: 'success',
+                    title: 'تم الحذف بنجاح',
+                    text: `تم حذف ${docIds.length} عميل من السجل.`,
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+
+                // الخروج من وضع التحديد بعد الحذف بنجاح
+                exitBulkDeleteMode();
+
+            } catch (error) {
+                console.error("Bulk Delete Error: ", error);
+                Swal.fire('حدث خطأ', 'لم يتم الحذف بالكامل: ' + error.message, 'error');
+            }
+        }
+    });
 };
 
 // 4. دالة التأجيل (Postpone) مع ربط منبه الأندرويد
