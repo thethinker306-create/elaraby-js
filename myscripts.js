@@ -25,7 +25,7 @@
   }
 })();
       // إعدادات الكاش والتهيئة
-      const CACHE_KEY = 'elaraby_products_cache_v4'; 
+      const CACHE_KEY = 'elaraby_products_cache_v3'; 
       const CACHE_TIME_KEY = 'elaraby_cache_time';
       const RECENT_SEARCH_KEY = "elaraby_recent_searches";
       // متغيرات النظام
@@ -2370,6 +2370,63 @@ document.addEventListener('DOMContentLoaded', function() {
           if (e.target === this) closeBundleModal();
       });
 
+
+// ==========================================
+// 🔙 نظام العودة للشاشة الرئيسية (عند ضغط زر الرجوع بالهاتف)
+// ==========================================
+
+// 1. التحقق هل المستخدم يبحث عن شيء أو داخل قسم معين؟
+window.isSearchOrFilterActive = function() {
+    const searchVal = document.getElementById('main-search') ? document.getElementById('main-search').value.trim() : '';
+    const activeCat = document.querySelector('.cat-main-row.active, .cat-drop-item.active');
+    
+    // يرجع true إذا كان هناك نص في البحث أو هناك قسم محدد
+    return searchVal.length > 0 || activeCat !== null;
+};
+
+// 2. دالة تصفير كل شيء والعودة للواجهة الرئيسية الافتراضية
+window.resetToHome = function() {
+    // أ- مسح شريط البحث
+    const inp = document.getElementById('main-search');
+    if (inp) { 
+        inp.value = ''; 
+        inp.blur(); 
+    }
+    
+    // ب- إغلاق صندوق اقتراحات البحث
+    const sugBox = document.getElementById('sug-box');
+    if(sugBox) sugBox.style.display = 'none';
+
+    // ج- إزالة العلامة النشطة (اللون الأزرق) من جميع الأقسام
+    document.querySelectorAll('.cat-main-row, .cat-drop-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    
+    // د- إرجاع اسم زر الأقسام لشكله الافتراضي
+    const btnText = document.querySelector('#cat-toggle-btn span');
+    if(btnText) btnText.innerHTML = `<i class='fa-solid fa-gear' style='margin-left: 5px;'></i> تصفية حسب القسم`;
+    
+    // هـ- إخفاء حاوية المنتجات
+    const res = document.getElementById('results-container');
+    if (res) res.innerHTML = '';
+    
+    // و- إخفاء زر "عرض المزيد"
+    const loadMoreBtn = document.getElementById('load-more-wrapper');
+    if (loadMoreBtn) loadMoreBtn.style.display = 'none';
+    
+    // ز- إظهار زر جولة المزايا مجدداً
+    const tourBtn = document.getElementById('home-tour-btn'); 
+    if(tourBtn) tourBtn.classList.remove('tour-hidden');
+
+    // إغلاق أي قائمة أقسام منسدلة مفتوحة
+    const menu = document.getElementById("cat-drop-menu");
+    const mainArrow = document.getElementById("cat-main-arrow");
+    if(menu) menu.classList.remove("show-menu");
+    if(mainArrow) { mainArrow.style.transform = "rotate(0deg)"; mainArrow.style.color = "#1e293b"; }
+
+    return 'home_reset';
+};
+
       // ==========================================
       // 🔐 نظام الحماية الذكي (تحديث فوري + خروج إجباري)
       // ==========================================
@@ -3142,30 +3199,28 @@ function searchSalesProd(val) {
 }
 
 // === دالة اختيار المنتج وتعبئة البيانات تلقائياً ===
-window.selectSalesProd = function(name, price, id) {
-    // 1. تعبئة اسم المنتج
+function selectSalesProd(name, price, id) {
+    // تعبئة اسم المنتج
     document.getElementById('s-prod').value = name;
     
-    // 2. تعبئة السعر تلقائياً (بعد تنظيفه من الفواصل والنصوص)
+    // تعبئة السعر تلقائياً (ميزة إضافية)
     const priceField = document.getElementById('s-price');
-    if (priceField && price) {
-        // استخراج الأرقام والنقطة العشرية فقط باستخدام التعبيرات النمطية (Regex)
-        let cleanPrice = String(price).replace(/[^\d.]/g, '');
-        
-        // التأكد من أن الناتج رقم صالح قبل إضافته للحقل
-        let parsedPrice = parseFloat(cleanPrice);
-        
-        if (!isNaN(parsedPrice)) {
-            priceField.value = parsedPrice; // وضع السعر الصافي
-        } else {
-            priceField.value = ''; // تركه فارغاً إذا كان السعر غير صالح
-        }
+    if(priceField && price) {
+        priceField.value = price;
     }
 
-    // 3. إخفاء قائمة الاقتراحات بعد الاختيار
-    const sugBox = document.getElementById('sales-sug-list');
-    if (sugBox) sugBox.style.display = 'none';
-};
+    // إخفاء القائمة
+    document.getElementById('sales-sug-list').style.display = 'none';
+}
+
+// إخفاء القائمة عند الضغط في أي مكان خارجها
+document.addEventListener('click', function(e) {
+    const box = document.getElementById('sales-sug-list');
+    const input = document.getElementById('s-prod');
+    if (e.target !== box && e.target !== input) {
+        if(box) box.style.display = 'none';
+    }
+});
 
 // دالة إخفاء الإشعار يدوياً
 function dismissNotification() {
