@@ -1,5 +1,4 @@
-
-      //<![CDATA[
+    //<![CDATA[
       (function(){
   // قائمة النطاقات المسموح بها 
   var allowedDomains = ["elaraby-products.blogspot.com", "localhost"]; 
@@ -25,7 +24,7 @@
   }
 })();
       // إعدادات الكاش والتهيئة
-      const CACHE_KEY = 'elaraby_products_cache_v3'; 
+      const CACHE_KEY = 'elaraby_products_cache_v1'; 
       const CACHE_TIME_KEY = 'elaraby_cache_time';
       const RECENT_SEARCH_KEY = "elaraby_recent_searches";
       // متغيرات النظام
@@ -609,6 +608,61 @@ function doSearch() {
     inp.value = '';  
     inp.blur();      
 }
+
+
+      // ==========================================
+      // 🔙 نظام العودة للشاشة الرئيسية (عند ضغط زر الرجوع بالهاتف)
+      // ==========================================
+
+      window.isSearchOrFilterActive = function() {
+          const searchVal = document.getElementById('main-search') ? document.getElementById('main-search').value.trim() : '';
+          const activeCat = document.querySelector('.cat-main-row.active, .cat-drop-item.active');
+          // يرجع true إذا كان هناك نص في البحث أو هناك قسم محدد
+          return searchVal.length > 0 || activeCat !== null;
+      };
+
+      window.resetToHome = function() {
+          // مسح شريط البحث
+          const inp = document.getElementById('main-search');
+          if (inp) { inp.value = ''; inp.blur(); }
+          
+          // إغلاق صندوق اقتراحات البحث
+          const sugBox = document.getElementById('sug-box');
+          if(sugBox) sugBox.style.display = 'none';
+
+          // إزالة العلامة النشطة من جميع الأقسام
+          document.querySelectorAll('.cat-main-row, .cat-drop-item').forEach(item => {
+              item.classList.remove('active');
+          });
+          
+          // إرجاع اسم زر الأقسام لشكله الافتراضي
+          const btnText = document.querySelector('#cat-toggle-btn span');
+          if(btnText) btnText.innerHTML = `<i class='fa-solid fa-gear' style='margin-left: 5px;'></i> تصفية حسب القسم`;
+          
+          // إخفاء حاوية المنتجات
+          const res = document.getElementById('results-container');
+          if (res) res.innerHTML = '';
+          
+          // إخفاء زر "عرض المزيد"
+          const loadMoreBtn = document.getElementById('load-more-wrapper');
+          if (loadMoreBtn) loadMoreBtn.style.display = 'none';
+          
+          // إظهار زر جولة المزايا مجدداً
+          const tourBtn = document.getElementById('home-tour-btn'); 
+          if(tourBtn) tourBtn.classList.remove('tour-hidden');
+
+          // إغلاق أي قائمة أقسام منسدلة مفتوحة
+          const menu = document.getElementById("cat-drop-menu");
+          const mainArrow = document.getElementById("cat-main-arrow");
+          if(menu) menu.classList.remove("show-menu");
+          if(mainArrow) { mainArrow.style.transform = "rotate(0deg)"; mainArrow.style.color = "#1e293b"; }
+
+          // رفع الشاشة للأعلى بسلاسة
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+
+          return 'home_reset';
+      };
+
 
 // ==========================================
 // المتغيرات العامة لنظام عرض المزيد (Pagination)
@@ -2371,61 +2425,7 @@ document.addEventListener('DOMContentLoaded', function() {
       });
 
 
-// ==========================================
-// 🔙 نظام العودة للشاشة الرئيسية (عند ضغط زر الرجوع بالهاتف)
-// ==========================================
-
-// 1. التحقق هل المستخدم يبحث عن شيء أو داخل قسم معين؟
-window.isSearchOrFilterActive = function() {
-    const searchVal = document.getElementById('main-search') ? document.getElementById('main-search').value.trim() : '';
-    const activeCat = document.querySelector('.cat-main-row.active, .cat-drop-item.active');
-    
-    // يرجع true إذا كان هناك نص في البحث أو هناك قسم محدد
-    return searchVal.length > 0 || activeCat !== null;
-};
-
-// 2. دالة تصفير كل شيء والعودة للواجهة الرئيسية الافتراضية
-window.resetToHome = function() {
-    // أ- مسح شريط البحث
-    const inp = document.getElementById('main-search');
-    if (inp) { 
-        inp.value = ''; 
-        inp.blur(); 
-    }
-    
-    // ب- إغلاق صندوق اقتراحات البحث
-    const sugBox = document.getElementById('sug-box');
-    if(sugBox) sugBox.style.display = 'none';
-
-    // ج- إزالة العلامة النشطة (اللون الأزرق) من جميع الأقسام
-    document.querySelectorAll('.cat-main-row, .cat-drop-item').forEach(item => {
-        item.classList.remove('active');
-    });
-    
-    // د- إرجاع اسم زر الأقسام لشكله الافتراضي
-    const btnText = document.querySelector('#cat-toggle-btn span');
-    if(btnText) btnText.innerHTML = `<i class='fa-solid fa-gear' style='margin-left: 5px;'></i> تصفية حسب القسم`;
-    
-    // هـ- إخفاء حاوية المنتجات
-    const res = document.getElementById('results-container');
-    if (res) res.innerHTML = '';
-    
-    // و- إخفاء زر "عرض المزيد"
-    const loadMoreBtn = document.getElementById('load-more-wrapper');
-    if (loadMoreBtn) loadMoreBtn.style.display = 'none';
-    
-    // ز- إظهار زر جولة المزايا مجدداً
-    const tourBtn = document.getElementById('home-tour-btn'); 
-    if(tourBtn) tourBtn.classList.remove('tour-hidden');
-
-    // إغلاق أي قائمة أقسام منسدلة مفتوحة
-    const menu = document.getElementById("cat-drop-menu");
-    const mainArrow = document.getElementById("cat-main-arrow");
-    if(menu) menu.classList.remove("show-menu");
-    if(mainArrow) { mainArrow.style.transform = "rotate(0deg)"; mainArrow.style.color = "#1e293b"; }
-
-    return 'home_reset';
-};
+      
 
       // ==========================================
       // 🔐 نظام الحماية الذكي (تحديث فوري + خروج إجباري)
